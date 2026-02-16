@@ -493,6 +493,30 @@ app.post('/api/dms/with/:otherUserId', requireAuth, async (req, res) => {
   res.json({ ok: true, thread })
 })
 
+app.get('/api/dms/threads', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+
+  const threads = await prisma.dmThread.findMany({
+    where: { OR: [{ userAId: userId }, { userBId: userId }] },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      createdAt: true,
+      userA: { select: { id: true, username: true } },
+      userB: { select: { id: true, username: true } },
+      messages: { select: { createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+    },
+  })
+
+  const out = threads.map((t) => {
+    const other = t.userA.id === userId ? t.userB : t.userA
+    const lastMessageAt = t.messages[0]?.createdAt || null
+    return { id: t.id, createdAt: t.createdAt, otherUser: other, lastMessageAt }
+  })
+
+  res.json({ ok: true, threads: out })
+})
+
 app.get('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   const userId = req.session.userId
   const { threadId } = req.params

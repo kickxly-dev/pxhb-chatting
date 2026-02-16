@@ -47,6 +47,12 @@ export type FriendRequest = {
 }
 
 export type DmThread = { id: string; createdAt: string; userAId: string; userBId: string }
+export type DmThreadListItem = {
+  id: string
+  createdAt: string
+  lastMessageAt: string | null
+  otherUser: FriendUser
+}
 export type DmMessage = {
   id: string
   content: string
@@ -160,6 +166,10 @@ export async function apiListFriends() {
 
 export async function apiOpenDmWithUser(otherUserId: string) {
   return apiFetch<{ thread: DmThread }>(`/api/dms/with/${encodeURIComponent(otherUserId)}`, { method: 'POST' })
+}
+
+export async function apiListDmThreads() {
+  return apiFetch<{ threads: DmThreadListItem[] }>('/api/dms/threads')
 }
 
 export async function apiListDmMessages(threadId: string, limit = 50) {
