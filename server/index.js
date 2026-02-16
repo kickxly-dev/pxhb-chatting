@@ -178,6 +178,65 @@ io.on('connection', (socket) => {
       socket.emit('chat:error', { message: 'Failed to send message' })
     }
   })
+
+  socket.on('dm:join', async (payload) => {
+    try {
+      const { threadId } = payload || {}
+      if (!threadId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const thread = await prisma.dmThread.findUnique({
+        where: { id: threadId },
+        select: { id: true, userAId: true, userBId: true },
+      })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      socket.join(`dm:${threadId}`)
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to join dm' })
+    }
+  })
+
+  socket.on('dm:send', async (payload) => {
+    try {
+      const { threadId, content } = payload || {}
+      if (!threadId || typeof content !== 'string' || !content.trim()) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const thread = await prisma.dmThread.findUnique({
+        where: { id: threadId },
+        select: { id: true, userAId: true, userBId: true },
+      })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      const message = await prisma.dmMessage.create({
+        data: { threadId, authorId: userId, content: content.trim() },
+        include: { author: { select: { id: true, username: true } } },
+      })
+
+      io.to(`dm:${threadId}`).emit('dm:message', message)
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to send dm' })
+    }
+  })
 })
 
 function requireAuth(req, res, next) {

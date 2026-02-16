@@ -218,6 +218,9 @@ function App() {
     try {
       const t = await apiOpenDmWithUser(friend.id)
       setDmThread(t.thread)
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('dm:join', { threadId: t.thread.id })
+      }
       const m = await apiListDmMessages(t.thread.id, 100)
       setDmMessages(m.messages)
     } catch (e) {
@@ -233,6 +236,10 @@ function App() {
     if (!content) return
     setDmText('')
     try {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('dm:send', { threadId: dmThread.id, content })
+        return
+      }
       const res = await apiSendDmMessage(dmThread.id, content)
       setDmMessages((prev) => [...prev, res.message])
     } catch (e) {
@@ -335,6 +342,10 @@ function App() {
       if (selectedChannelId) {
         s.emit('channel:join', { channelId: selectedChannelId })
       }
+
+      if (dmThread?.id) {
+        s.emit('dm:join', { threadId: dmThread.id })
+      }
     })
     s.on('disconnect', () => setSocketConnected(false))
     s.on('connect_error', (err) => {
@@ -344,6 +355,13 @@ function App() {
 
     s.on('chat:message', (msg: ApiMessage) => {
       setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev
+        return [...prev, msg]
+      })
+    })
+
+    s.on('dm:message', (msg: DmMessage) => {
+      setDmMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
