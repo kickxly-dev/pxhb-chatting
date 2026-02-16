@@ -15,21 +15,34 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  apiAcceptFriendRequest,
+  apiCancelFriendRequest,
   apiCreateServer,
   apiCreateChannel,
   apiCreateInvite,
+  apiDeclineFriendRequest,
   apiDeleteChannel,
+  apiListFriends,
+  apiListFriendRequests,
   apiJoinInvite,
   apiListChannels,
   apiListMembers,
+  apiListDmMessages,
   apiListMessages,
   apiListServers,
   apiLogin,
   apiLogout,
   apiMe,
+  apiOpenDmWithUser,
   apiRenameChannel,
   apiRegister,
+  apiSendDmMessage,
+  apiSendFriendRequest,
   type Channel,
+  type DmMessage,
+  type DmThread,
+  type Friend,
+  type FriendRequest,
   type Member as ApiMember,
   type Message as ApiMessage,
   type Server,
@@ -87,6 +100,24 @@ function App() {
   const [joinBusy, setJoinBusy] = useState(false)
   const [joinError, setJoinError] = useState<string | null>(null)
 
+  const [friendsOpen, setFriendsOpen] = useState(false)
+  const [friendsBusy, setFriendsBusy] = useState(false)
+  const [friendsError, setFriendsError] = useState<string | null>(null)
+  const [friends, setFriends] = useState<Friend[]>([])
+  const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([])
+  const [outgoingRequests, setOutgoingRequests] = useState<FriendRequest[]>([])
+  const [friendUsername, setFriendUsername] = useState('')
+  const [sendFriendBusy, setSendFriendBusy] = useState(false)
+  const [sendFriendError, setSendFriendError] = useState<string | null>(null)
+
+  const [dmOpen, setDmOpen] = useState(false)
+  const [dmBusy, setDmBusy] = useState(false)
+  const [dmError, setDmError] = useState<string | null>(null)
+  const [dmThread, setDmThread] = useState<DmThread | null>(null)
+  const [dmWith, setDmWith] = useState<Friend | null>(null)
+  const [dmMessages, setDmMessages] = useState<DmMessage[]>([])
+  const [dmText, setDmText] = useState('')
+
   const initials = useMemo(() => {
     const u = user?.username?.trim()
     return u ? u.slice(0, 1).toUpperCase() : 'G'
@@ -100,6 +131,112 @@ function App() {
       setServers(list.servers)
     } else {
       setServers([])
+    }
+  }
+
+  async function refreshFriendsData() {
+    if (!user) {
+      setFriends([])
+      setIncomingRequests([])
+      setOutgoingRequests([])
+      return
+    }
+
+    setFriendsBusy(true)
+    setFriendsError(null)
+    try {
+      const [f, r] = await Promise.all([apiListFriends(), apiListFriendRequests()])
+      setFriends(f.friends)
+      setIncomingRequests(r.incoming)
+      setOutgoingRequests(r.outgoing)
+    } catch (e) {
+      setFriendsError(e instanceof Error ? e.message : 'friends_failed')
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function onSendFriendRequest() {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+
+    setSendFriendBusy(true)
+    setSendFriendError(null)
+    try {
+      const uname = friendUsername.trim()
+      if (!uname) throw new Error('invalid_username')
+      await apiSendFriendRequest(uname)
+      setFriendUsername('')
+      await refreshFriendsData()
+    } catch (e) {
+      setSendFriendError(e instanceof Error ? e.message : 'send_failed')
+    } finally {
+      setSendFriendBusy(false)
+    }
+  }
+
+  async function onAcceptRequest(requestId: string) {
+    try {
+      await apiAcceptFriendRequest(requestId)
+      await refreshFriendsData()
+    } catch (e) {
+      setFriendsError(e instanceof Error ? e.message : 'accept_failed')
+    }
+  }
+
+  async function onDeclineRequest(requestId: string) {
+    try {
+      await apiDeclineFriendRequest(requestId)
+      await refreshFriendsData()
+    } catch (e) {
+      setFriendsError(e instanceof Error ? e.message : 'decline_failed')
+    }
+  }
+
+  async function onCancelRequest(requestId: string) {
+    try {
+      await apiCancelFriendRequest(requestId)
+      await refreshFriendsData()
+    } catch (e) {
+      setFriendsError(e instanceof Error ? e.message : 'cancel_failed')
+    }
+  }
+
+  async function openDm(friend: Friend) {
+    if (!user) return
+    setDmOpen(true)
+    setDmBusy(true)
+    setDmError(null)
+    setDmWith(friend)
+    setDmThread(null)
+    setDmMessages([])
+    setDmText('')
+
+    try {
+      const t = await apiOpenDmWithUser(friend.id)
+      setDmThread(t.thread)
+      const m = await apiListDmMessages(t.thread.id, 100)
+      setDmMessages(m.messages)
+    } catch (e) {
+      setDmError(e instanceof Error ? e.message : 'dm_failed')
+    } finally {
+      setDmBusy(false)
+    }
+  }
+
+  async function onSendDm() {
+    if (!dmThread) return
+    const content = dmText.trim()
+    if (!content) return
+    setDmText('')
+    try {
+      const res = await apiSendDmMessage(dmThread.id, content)
+      setDmMessages((prev) => [...prev, res.message])
+    } catch (e) {
+      setDmError(e instanceof Error ? e.message : 'send_failed')
     }
   }
 
@@ -542,6 +679,23 @@ function App() {
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
                 onClick={() => {
+                  if (!user) {
+                    setAuthMode('login')
+                    setAuthOpen(true)
+                    return
+                  }
+                  setFriendsOpen(true)
+                  setFriendsError(null)
+                  setSendFriendError(null)
+                  refreshFriendsData()
+                }}
+              >
+                Friends
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
                   setInviteError(null)
                   setInviteCode('')
                   setJoinError(null)
@@ -655,6 +809,169 @@ function App() {
           </ScrollArea>
         </aside>
       </div>
+
+      <Dialog
+        open={friendsOpen}
+        onOpenChange={(o) => {
+          setFriendsOpen(o)
+          if (o) refreshFriendsData()
+        }}
+      >
+        <DialogContent className="bg-px-panel border-white/10 text-px-text">
+          <DialogHeader>
+            <DialogTitle>Friends</DialogTitle>
+            <DialogDescription>Send friend requests by username. Friends are required before DMs.</DialogDescription>
+          </DialogHeader>
+
+          {!user ? (
+            <div className="text-sm text-px-text2">Login to manage friends.</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="text-xs font-extrabold tracking-wide text-px-text2">ADD FRIEND</div>
+                <div className="flex gap-2">
+                  <Input value={friendUsername} onChange={(e) => setFriendUsername(e.target.value)} placeholder="username" />
+                  <Button onClick={onSendFriendRequest} disabled={sendFriendBusy} className="bg-px-brand text-white hover:bg-px-brand/90">
+                    Send
+                  </Button>
+                </div>
+                {sendFriendError ? <div className="text-sm text-red-400">{sendFriendError}</div> : null}
+              </div>
+
+              {friendsError ? <div className="text-sm text-red-400">{friendsError}</div> : null}
+              {friendsBusy ? <div className="text-sm text-px-text2">Loading…</div> : null}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">INCOMING</div>
+                  <div className="space-y-2">
+                    {incomingRequests.length ? (
+                      incomingRequests.map((r) => (
+                        <div key={r.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-sm font-bold">{r.from?.username || 'unknown'}</div>
+                          <div className="mt-2 flex gap-2">
+                            <Button className="h-8 bg-px-brand text-white hover:bg-px-brand/90" onClick={() => onAcceptRequest(r.id)}>
+                              Accept
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                              onClick={() => onDeclineRequest(r.id)}
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-px-text2">No incoming requests</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">OUTGOING</div>
+                  <div className="space-y-2">
+                    {outgoingRequests.length ? (
+                      outgoingRequests.map((r) => (
+                        <div key={r.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-sm font-bold">{r.to?.username || 'unknown'}</div>
+                          <div className="mt-2 flex gap-2">
+                            <Button
+                              variant="secondary"
+                              className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                              onClick={() => onCancelRequest(r.id)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-px-text2">No outgoing requests</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-extrabold tracking-wide text-px-text2">FRIENDS</div>
+                <div className="space-y-2">
+                  {friends.length ? (
+                    friends.map((f) => (
+                      <div key={f.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold">{f.username}</div>
+                          <div className="truncate text-xs text-px-text2">{f.id}</div>
+                        </div>
+                        <Button className="h-8 bg-px-brand text-white hover:bg-px-brand/90" onClick={() => openDm(f)}>
+                          DM
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-px-text2">No friends yet</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="secondary" className="bg-white/5 text-px-text2 hover:bg-white/10" onClick={() => setFriendsOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dmOpen} onOpenChange={setDmOpen}>
+        <DialogContent className="bg-px-panel border-white/10 text-px-text">
+          <DialogHeader>
+            <DialogTitle>DM {dmWith ? `with ${dmWith.username}` : ''}</DialogTitle>
+            <DialogDescription>{dmThread ? `Thread ${dmThread.id}` : 'Loading thread…'}</DialogDescription>
+          </DialogHeader>
+
+          {dmError ? <div className="text-sm text-red-400">{dmError}</div> : null}
+          {dmBusy ? <div className="text-sm text-px-text2">Loading…</div> : null}
+
+          <div className="max-h-[50vh] overflow-auto rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="space-y-2">
+              {dmMessages.length ? (
+                dmMessages.map((m) => (
+                  <div key={m.id} className="text-sm">
+                    <span className="font-extrabold">{m.author.username}</span>
+                    <span className="text-px-text2">: </span>
+                    <span>{m.content}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-px-text2">No messages yet</div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              value={dmText}
+              onChange={(e) => setDmText(e.target.value)}
+              placeholder="Message"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSendDm()
+              }}
+            />
+            <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={onSendDm} disabled={!dmThread}>
+              Send
+            </Button>
+          </div>
+
+          <DialogFooter>
+            <Button variant="secondary" className="bg-white/5 text-px-text2 hover:bg-white/10" onClick={() => setDmOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={createChannelOpen}
