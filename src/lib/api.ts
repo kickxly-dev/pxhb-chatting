@@ -36,6 +36,24 @@ export type Message = {
   author: { id: string; username: string }
 }
 
+export type FriendUser = { id: string; username: string }
+export type Friend = { id: string; username: string; friendshipId: string; createdAt: string }
+export type FriendRequest = {
+  id: string
+  status: string
+  createdAt: string
+  from?: FriendUser
+  to?: FriendUser
+}
+
+export type DmThread = { id: string; createdAt: string; userAId: string; userBId: string }
+export type DmMessage = {
+  id: string
+  content: string
+  createdAt: string
+  author: { id: string; username: string }
+}
+
 export async function apiMe() {
   return apiFetch<{ user: User | null }>('/api/auth/me')
 }
@@ -108,4 +126,49 @@ export async function apiJoinInvite(code: string) {
 
 export async function apiListMessages(channelId: string, limit = 50) {
   return apiFetch<{ messages: Message[] }>(`/api/channels/${channelId}/messages?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiSendFriendRequest(username: string) {
+  return apiFetch<{ request: FriendRequest }>('/api/friends/requests', {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  })
+}
+
+export async function apiListFriendRequests() {
+  return apiFetch<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>('/api/friends/requests')
+}
+
+export async function apiAcceptFriendRequest(requestId: string) {
+  return apiFetch<{ friendship: { id: string; createdAt: string; userAId: string; userBId: string } }>(
+    `/api/friends/requests/${encodeURIComponent(requestId)}/accept`,
+    { method: 'POST' },
+  )
+}
+
+export async function apiDeclineFriendRequest(requestId: string) {
+  return apiFetch<Record<string, never>>(`/api/friends/requests/${encodeURIComponent(requestId)}/decline`, { method: 'POST' })
+}
+
+export async function apiCancelFriendRequest(requestId: string) {
+  return apiFetch<Record<string, never>>(`/api/friends/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' })
+}
+
+export async function apiListFriends() {
+  return apiFetch<{ friends: Friend[] }>('/api/friends')
+}
+
+export async function apiOpenDmWithUser(otherUserId: string) {
+  return apiFetch<{ thread: DmThread }>(`/api/dms/with/${encodeURIComponent(otherUserId)}`, { method: 'POST' })
+}
+
+export async function apiListDmMessages(threadId: string, limit = 50) {
+  return apiFetch<{ messages: DmMessage[] }>(`/api/dms/${encodeURIComponent(threadId)}/messages?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiSendDmMessage(threadId: string, content: string) {
+  return apiFetch<{ message: DmMessage }>(`/api/dms/${encodeURIComponent(threadId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
 }

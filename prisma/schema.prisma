@@ -17,6 +17,13 @@ enum MemberRole {
   MEMBER
 }
 
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELED
+}
+
 model User {
   id           String       @id @default(cuid())
   createdAt    DateTime     @default(now())
@@ -30,6 +37,16 @@ model User {
   messages     Message[]
 
   invitesCreated Invite[]   @relation("InviteCreator")
+
+  friendRequestsSent     FriendRequest[] @relation("FriendRequestFrom")
+  friendRequestsReceived FriendRequest[] @relation("FriendRequestTo")
+
+  friendshipsA Friendship[] @relation("FriendshipA")
+  friendshipsB Friendship[] @relation("FriendshipB")
+
+  dmThreadsA DmThread[] @relation("DmThreadA")
+  dmThreadsB DmThread[] @relation("DmThreadB")
+  dmMessages DmMessage[]
 }
 
 model Server {
@@ -107,4 +124,63 @@ model Message {
   author    User     @relation(fields: [authorId], references: [id])
 
   @@index([channelId, createdAt])
+}
+
+model FriendRequest {
+  id        String              @id @default(cuid())
+  createdAt DateTime            @default(now())
+  status    FriendRequestStatus @default(PENDING)
+
+  fromId String
+  from   User @relation("FriendRequestFrom", fields: [fromId], references: [id])
+
+  toId String
+  to   User @relation("FriendRequestTo", fields: [toId], references: [id])
+
+  @@unique([fromId, toId])
+  @@index([toId, status, createdAt])
+}
+
+model Friendship {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userAId String
+  userA   User @relation("FriendshipA", fields: [userAId], references: [id])
+
+  userBId String
+  userB   User @relation("FriendshipB", fields: [userBId], references: [id])
+
+  @@unique([userAId, userBId])
+  @@index([userAId, createdAt])
+}
+
+model DmThread {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userAId String
+  userA   User @relation("DmThreadA", fields: [userAId], references: [id])
+
+  userBId String
+  userB   User @relation("DmThreadB", fields: [userBId], references: [id])
+
+  messages DmMessage[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId, createdAt])
+}
+
+model DmMessage {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  content   String
+
+  threadId String
+  thread   DmThread @relation(fields: [threadId], references: [id])
+
+  authorId String
+  author   User @relation(fields: [authorId], references: [id])
+
+  @@index([threadId, createdAt])
 }

@@ -198,6 +198,10 @@ async function requireMembership(req, res, serverId) {
   return membership
 }
 
+function orderedPair(a, b) {
+  return a < b ? [a, b] : [b, a]
+}
+
 function randomCode(len = 10) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
   let out = ''
@@ -272,6 +276,203 @@ app.get('/api/auth/me', async (req, res) => {
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true } })
   res.json({ ok: true, user })
+})
+
+app.post('/api/friends/requests', requireAuth, async (req, res) => {
+  const parsed = z
+    .object({
+      username: z.string().min(1),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const fromId = req.session.userId
+  const uname = parsed.data.username.trim().toLowerCase()
+  if (!uname) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const toUser = await prisma.user.findUnique({ where: { username: uname }, select: { id: true, username: true } })
+  if (!toUser) return res.status(404).json({ ok: false, error: 'user_not_found' })
+  if (toUser.id === fromId) return res.status(400).json({ ok: false, error: 'cannot_friend_self' })
+
+  const [userAId, userBId] = orderedPair(fromId, toUser.id)
+  const existingFriend = await prisma.friendship.findUnique({
+    where: { userAId_userBId: { userAId, userBId } },
+    select: { id: true },
+  })
+  if (existingFriend) return res.status(409).json({ ok: false, error: 'already_friends' })
+
+  const existing = await prisma.friendRequest.findUnique({
+    where: { fromId_toId: { fromId, toId: toUser.id } },
+    select: { id: true, status: true },
+  })
+  if (existing && existing.status === 'PENDING') {
+    return res.status(409).json({ ok: false, error: 'request_already_sent' })
+  }
+
+  const inbound = await prisma.friendRequest.findUnique({
+    where: { fromId_toId: { fromId: toUser.id, toId: fromId } },
+    select: { id: true, status: true },
+  })
+  if (inbound && inbound.status === 'PENDING') {
+    return res.status(409).json({ ok: false, error: 'request_already_received' })
+  }
+
+  const request = await prisma.friendRequest.upsert({
+    where: { fromId_toId: { fromId, toId: toUser.id } },
+    create: { fromId, toId: toUser.id, status: 'PENDING' },
+    update: { status: 'PENDING' },
+    select: { id: true, status: true, createdAt: true, to: { select: { id: true, username: true } } },
+  })
+
+  res.json({ ok: true, request })
+})
+
+app.get('/api/friends/requests', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+
+  const incoming = await prisma.friendRequest.findMany({
+    where: { toId: userId, status: 'PENDING' },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true, createdAt: true, from: { select: { id: true, username: true } } },
+  })
+  const outgoing = await prisma.friendRequest.findMany({
+    where: { fromId: userId, status: 'PENDING' },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true, createdAt: true, to: { select: { id: true, username: true } } },
+  })
+
+  res.json({ ok: true, incoming, outgoing })
+})
+
+app.post('/api/friends/requests/:requestId/accept', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { requestId } = req.params
+
+  const fr = await prisma.friendRequest.findUnique({ where: { id: requestId }, select: { id: true, status: true, fromId: true, toId: true } })
+  if (!fr) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (fr.toId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (fr.status !== 'PENDING') return res.status(409).json({ ok: false, error: 'not_pending' })
+
+  const [userAId, userBId] = orderedPair(fr.fromId, fr.toId)
+
+  const friendship = await prisma.$transaction(async (tx) => {
+    await tx.friendRequest.update({ where: { id: fr.id }, data: { status: 'ACCEPTED' } })
+    return tx.friendship.upsert({
+      where: { userAId_userBId: { userAId, userBId } },
+      create: { userAId, userBId },
+      update: {},
+      select: { id: true, createdAt: true, userAId: true, userBId: true },
+    })
+  })
+
+  res.json({ ok: true, friendship })
+})
+
+app.post('/api/friends/requests/:requestId/decline', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { requestId } = req.params
+
+  const fr = await prisma.friendRequest.findUnique({ where: { id: requestId }, select: { id: true, status: true, toId: true } })
+  if (!fr) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (fr.toId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (fr.status !== 'PENDING') return res.status(409).json({ ok: false, error: 'not_pending' })
+
+  await prisma.friendRequest.update({ where: { id: fr.id }, data: { status: 'DECLINED' } })
+  res.json({ ok: true })
+})
+
+app.post('/api/friends/requests/:requestId/cancel', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { requestId } = req.params
+
+  const fr = await prisma.friendRequest.findUnique({ where: { id: requestId }, select: { id: true, status: true, fromId: true } })
+  if (!fr) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (fr.fromId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (fr.status !== 'PENDING') return res.status(409).json({ ok: false, error: 'not_pending' })
+
+  await prisma.friendRequest.update({ where: { id: fr.id }, data: { status: 'CANCELED' } })
+  res.json({ ok: true })
+})
+
+app.get('/api/friends', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const friendships = await prisma.friendship.findMany({
+    where: { OR: [{ userAId: userId }, { userBId: userId }] },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      createdAt: true,
+      userA: { select: { id: true, username: true } },
+      userB: { select: { id: true, username: true } },
+    },
+  })
+
+  const friends = friendships.map((f) => {
+    const other = f.userA.id === userId ? f.userB : f.userA
+    return { id: other.id, username: other.username, friendshipId: f.id, createdAt: f.createdAt }
+  })
+
+  res.json({ ok: true, friends })
+})
+
+app.post('/api/dms/with/:otherUserId', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { otherUserId } = req.params
+  if (!otherUserId || otherUserId === userId) return res.status(400).json({ ok: false, error: 'invalid_user' })
+
+  const [userAId, userBId] = orderedPair(userId, otherUserId)
+  const friendship = await prisma.friendship.findUnique({ where: { userAId_userBId: { userAId, userBId } }, select: { id: true } })
+  if (!friendship) return res.status(403).json({ ok: false, error: 'friends_required' })
+
+  const thread = await prisma.dmThread.upsert({
+    where: { userAId_userBId: { userAId, userBId } },
+    create: { userAId, userBId },
+    update: {},
+    select: { id: true, createdAt: true, userAId: true, userBId: true },
+  })
+
+  res.json({ ok: true, thread })
+})
+
+app.get('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { threadId } = req.params
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200)
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const messages = await prisma.dmMessage.findMany({
+    where: { threadId },
+    include: { author: { select: { id: true, username: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  })
+
+  res.json({ ok: true, messages: messages.reverse() })
+})
+
+app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { threadId } = req.params
+  const parsed = z
+    .object({
+      content: z.string().min(1).max(2000),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const message = await prisma.dmMessage.create({
+    data: { threadId, authorId: userId, content: parsed.data.content.trim() },
+    include: { author: { select: { id: true, username: true } } },
+  })
+
+  res.json({ ok: true, message })
 })
 
 app.get('/api/servers', requireAuth, async (req, res) => {
