@@ -7,8 +7,13 @@ import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
 import cors from 'cors'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import session from 'express-session'
+import helmet from 'helmet'
+import { createClient as createRedisClient } from 'redis'
+import { RedisStore } from 'connect-redis'
 import { Server as SocketIOServer } from 'socket.io'
+import { z } from 'zod'
 
 import { PrismaClient } from '@prisma/client'
 
@@ -23,6 +28,12 @@ const port = Number(process.env.PORT || 3000)
 app.set('trust proxy', 1)
 
 app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  }),
+)
+
+app.use(
   cors({
     origin: isProd ? true : ['http://localhost:5173'],
     credentials: true,
@@ -30,11 +41,36 @@ app.use(
 )
 app.use(express.json({ limit: '1mb' }))
 
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+app.use('/api', apiLimiter)
+
+let redisStore = undefined
+if (process.env.REDIS_URL) {
+  const redisClient = createRedisClient({ url: process.env.REDIS_URL })
+  redisClient.on('error', () => {})
+  await redisClient.connect()
+  redisStore = new RedisStore({ client: redisClient, prefix: 'pxhb:' })
+}
+
 const sessionMiddleware = session({
   name: 'pxhb.sid',
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
+  store: redisStore,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
@@ -169,35 +205,20 @@ function randomCode(len = 10) {
   return out
 }
 
-app.get('/api/servers/:serverId/members', requireAuth, async (req, res) => {
-  const { serverId } = req.params
-  const membership = await requireMembership(req, res, serverId)
-  if (!membership) return
-
-  const members = await prisma.membership.findMany({
-    where: { serverId },
-    include: { user: { select: { id: true, username: true } } },
-    orderBy: { createdAt: 'asc' },
-  })
-
-  res.json({
-    ok: true,
-    members: members.map((m) => ({ id: m.user.id, username: m.user.username, role: m.role })),
-  })
-})
-
 app.get('/api/health', (req, res) => {
   res.json({ ok: true })
 })
 
 app.post('/api/auth/register', async (req, res) => {
-  const { username, password } = req.body || {}
-  if (typeof username !== 'string' || username.trim().length < 3) {
-    return res.status(400).json({ ok: false, error: 'invalid_username' })
-  }
-  if (typeof password !== 'string' || password.length < 6) {
-    return res.status(400).json({ ok: false, error: 'invalid_password' })
-  }
+  const parsed = z
+    .object({
+      username: z.string().min(3),
+      password: z.string().min(6),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const { username, password } = parsed.data
 
   const uname = username.trim().toLowerCase()
 
@@ -217,11 +238,16 @@ app.post('/api/auth/register', async (req, res) => {
   res.json({ ok: true, user })
 })
 
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body || {}
-  if (typeof username !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ ok: false, error: 'invalid_payload' })
-  }
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  const parsed = z
+    .object({
+      username: z.string().min(1),
+      password: z.string().min(1),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const { username, password } = parsed.data
 
   const uname = username.trim().toLowerCase()
   const user = await prisma.user.findUnique({ where: { username: uname } })
@@ -263,10 +289,14 @@ app.get('/api/servers', requireAuth, async (req, res) => {
 
 app.post('/api/servers', requireAuth, async (req, res) => {
   const userId = req.session.userId
-  const { name } = req.body || {}
-  if (typeof name !== 'string' || name.trim().length < 2) {
-    return res.status(400).json({ ok: false, error: 'invalid_name' })
-  }
+  const parsed = z
+    .object({
+      name: z.string().min(2),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const { name } = parsed.data
 
   const server = await prisma.server.create({
     data: {
@@ -315,10 +345,14 @@ app.get('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
 
 app.post('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
   const { serverId } = req.params
-  const { name } = req.body || {}
-  if (typeof name !== 'string' || name.trim().length < 1) {
-    return res.status(400).json({ ok: false, error: 'invalid_name' })
-  }
+  const parsed = z
+    .object({
+      name: z.string().min(1),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const { name } = parsed.data
 
   const membership = await requireMembership(req, res, serverId)
   if (!membership) return
@@ -339,10 +373,14 @@ app.post('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
 
 app.patch('/api/channels/:channelId', requireAuth, async (req, res) => {
   const { channelId } = req.params
-  const { name } = req.body || {}
-  if (typeof name !== 'string' || name.trim().length < 1) {
-    return res.status(400).json({ ok: false, error: 'invalid_name' })
-  }
+  const parsed = z
+    .object({
+      name: z.string().min(1),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const { name } = parsed.data
 
   const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true } })
   if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
