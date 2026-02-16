@@ -149,6 +149,43 @@ function requireAuth(req, res, next) {
   next()
 }
 
+async function requireMembership(req, res, serverId) {
+  const userId = req.session.userId
+  const membership = await prisma.membership.findUnique({
+    where: { userId_serverId: { userId, serverId } },
+    select: { id: true, role: true },
+  })
+  if (!membership) {
+    res.status(403).json({ ok: false, error: 'forbidden' })
+    return null
+  }
+  return membership
+}
+
+function randomCode(len = 10) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+  let out = ''
+  for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  return out
+}
+
+app.get('/api/servers/:serverId/members', requireAuth, async (req, res) => {
+  const { serverId } = req.params
+  const membership = await requireMembership(req, res, serverId)
+  if (!membership) return
+
+  const members = await prisma.membership.findMany({
+    where: { serverId },
+    include: { user: { select: { id: true, username: true } } },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  res.json({
+    ok: true,
+    members: members.map((m) => ({ id: m.user.id, username: m.user.username, role: m.role })),
+  })
+})
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true })
 })
@@ -274,6 +311,117 @@ app.get('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
   })
 
   res.json({ ok: true, channels })
+})
+
+app.post('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
+  const { serverId } = req.params
+  const { name } = req.body || {}
+  if (typeof name !== 'string' || name.trim().length < 1) {
+    return res.status(400).json({ ok: false, error: 'invalid_name' })
+  }
+
+  const membership = await requireMembership(req, res, serverId)
+  if (!membership) return
+  if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+    return res.status(403).json({ ok: false, error: 'forbidden' })
+  }
+
+  try {
+    const channel = await prisma.channel.create({
+      data: { name: name.trim().toLowerCase().replace(/\s+/g, '-'), serverId, type: 'TEXT' },
+      select: { id: true, name: true, type: true },
+    })
+    res.json({ ok: true, channel })
+  } catch {
+    res.status(409).json({ ok: false, error: 'channel_exists' })
+  }
+})
+
+app.patch('/api/channels/:channelId', requireAuth, async (req, res) => {
+  const { channelId } = req.params
+  const { name } = req.body || {}
+  if (typeof name !== 'string' || name.trim().length < 1) {
+    return res.status(400).json({ ok: false, error: 'invalid_name' })
+  }
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await requireMembership(req, res, channel.serverId)
+  if (!membership) return
+  if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+    return res.status(403).json({ ok: false, error: 'forbidden' })
+  }
+
+  try {
+    const updated = await prisma.channel.update({
+      where: { id: channelId },
+      data: { name: name.trim().toLowerCase().replace(/\s+/g, '-') },
+      select: { id: true, name: true, type: true },
+    })
+    res.json({ ok: true, channel: updated })
+  } catch {
+    res.status(409).json({ ok: false, error: 'channel_exists' })
+  }
+})
+
+app.delete('/api/channels/:channelId', requireAuth, async (req, res) => {
+  const { channelId } = req.params
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await requireMembership(req, res, channel.serverId)
+  if (!membership) return
+  if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+    return res.status(403).json({ ok: false, error: 'forbidden' })
+  }
+
+  await prisma.channel.delete({ where: { id: channelId } })
+  res.json({ ok: true })
+})
+
+app.post('/api/servers/:serverId/invites', requireAuth, async (req, res) => {
+  const { serverId } = req.params
+
+  const membership = await requireMembership(req, res, serverId)
+  if (!membership) return
+  if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+    return res.status(403).json({ ok: false, error: 'forbidden' })
+  }
+
+  let invite = null
+  for (let i = 0; i < 5; i++) {
+    try {
+      invite = await prisma.invite.create({
+        data: { code: randomCode(10), serverId, creatorId: req.session.userId },
+        select: { code: true },
+      })
+      break
+    } catch {
+      invite = null
+    }
+  }
+
+  if (!invite) return res.status(500).json({ ok: false, error: 'invite_failed' })
+  res.json({ ok: true, invite })
+})
+
+app.post('/api/invites/:code/join', requireAuth, async (req, res) => {
+  const { code } = req.params
+  const invite = await prisma.invite.findUnique({ where: { code }, select: { serverId: true } })
+  if (!invite) return res.status(404).json({ ok: false, error: 'invalid_invite' })
+
+  const userId = req.session.userId
+  const existing = await prisma.membership.findUnique({
+    where: { userId_serverId: { userId, serverId: invite.serverId } },
+    select: { id: true },
+  })
+  if (!existing) {
+    await prisma.membership.create({ data: { userId, serverId: invite.serverId, role: 'MEMBER' } })
+  }
+
+  res.json({ ok: true, serverId: invite.serverId })
 })
 
 app.get('/api/channels/:channelId/messages', requireAuth, async (req, res) => {

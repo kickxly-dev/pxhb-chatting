@@ -16,14 +16,21 @@ import {
 } from '@/components/ui/dialog'
 import {
   apiCreateServer,
+  apiCreateChannel,
+  apiCreateInvite,
+  apiDeleteChannel,
+  apiJoinInvite,
   apiListChannels,
+  apiListMembers,
   apiListMessages,
   apiListServers,
   apiLogin,
   apiLogout,
   apiMe,
+  apiRenameChannel,
   apiRegister,
   type Channel,
+  type Member as ApiMember,
   type Message as ApiMessage,
   type Server,
   type User,
@@ -37,6 +44,8 @@ function App() {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ApiMessage[]>([])
   const [messageText, setMessageText] = useState('')
+
+  const [members, setMembers] = useState<ApiMember[]>([])
 
   const socketRef = useRef<Socket | null>(null)
   const [socketConnected, setSocketConnected] = useState(false)
@@ -55,6 +64,28 @@ function App() {
   const [newServerName, setNewServerName] = useState('')
   const [createServerBusy, setCreateServerBusy] = useState(false)
   const [createServerError, setCreateServerError] = useState<string | null>(null)
+
+  const [createChannelOpen, setCreateChannelOpen] = useState(false)
+  const [newChannelName, setNewChannelName] = useState('')
+  const [createChannelBusy, setCreateChannelBusy] = useState(false)
+  const [createChannelError, setCreateChannelError] = useState<string | null>(null)
+
+  const [renameChannelOpen, setRenameChannelOpen] = useState(false)
+  const [renameChannelName, setRenameChannelName] = useState('')
+  const [renameChannelBusy, setRenameChannelBusy] = useState(false)
+  const [renameChannelError, setRenameChannelError] = useState<string | null>(null)
+
+  const [deleteChannelOpen, setDeleteChannelOpen] = useState(false)
+  const [deleteChannelBusy, setDeleteChannelBusy] = useState(false)
+  const [deleteChannelError, setDeleteChannelError] = useState<string | null>(null)
+
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteCode, setInviteCode] = useState<string>('')
+  const [joinCode, setJoinCode] = useState('')
+  const [joinBusy, setJoinBusy] = useState(false)
+  const [joinError, setJoinError] = useState<string | null>(null)
 
   const initials = useMemo(() => {
     const u = user?.username?.trim()
@@ -104,6 +135,7 @@ function App() {
     if (!user || !selectedServerId) {
       setChannels([])
       setSelectedChannelId(null)
+      setMembers([])
       return
     }
 
@@ -118,6 +150,10 @@ function App() {
         setChannels([])
         setSelectedChannelId(null)
       })
+
+    apiListMembers(selectedServerId)
+      .then((res) => setMembers(res.members))
+      .catch(() => setMembers([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedServerId])
 
@@ -158,6 +194,10 @@ function App() {
     s.on('connect', () => {
       setSocketConnected(true)
       setSocketError(null)
+
+      if (selectedChannelId) {
+        s.emit('channel:join', { channelId: selectedChannelId })
+      }
     })
     s.on('disconnect', () => setSocketConnected(false))
     s.on('connect_error', (err) => {
@@ -172,8 +212,13 @@ function App() {
       })
     })
 
-    s.on('chat:error', () => {
-      // no-op for now
+    s.on('chat:error', (payload: unknown) => {
+      if (payload && typeof payload === 'object' && 'message' in payload) {
+        const msg = (payload as { message?: unknown }).message
+        setSocketError(typeof msg === 'string' && msg ? msg : 'chat_error')
+        return
+      }
+      setSocketError('chat_error')
     })
 
     socketRef.current = s
@@ -183,12 +228,13 @@ function App() {
       setSocketConnected(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  }, [user, selectedChannelId])
 
   useEffect(() => {
     if (!selectedChannelId) return
+    if (!socketConnected) return
     socketRef.current?.emit('channel:join', { channelId: selectedChannelId })
-  }, [selectedChannelId])
+  }, [selectedChannelId, socketConnected])
 
   function onSendMessage() {
     const content = messageText.trim()
@@ -199,8 +245,106 @@ function App() {
       return
     }
 
+    if (!socketConnected || !socketRef.current) {
+      setSocketError('socket_not_connected')
+      return
+    }
+
     socketRef.current?.emit('chat:send', { channelId: selectedChannelId, content })
     setMessageText('')
+  }
+
+  async function onCreateChannel() {
+    if (!user || !selectedServerId) return
+    setCreateChannelBusy(true)
+    setCreateChannelError(null)
+    try {
+      const name = newChannelName.trim()
+      if (!name) throw new Error('invalid_name')
+      const created = await apiCreateChannel(selectedServerId, name)
+      setNewChannelName('')
+      setCreateChannelOpen(false)
+      const res = await apiListChannels(selectedServerId)
+      setChannels(res.channels)
+      setSelectedChannelId(created.channel.id)
+    } catch (e) {
+      setCreateChannelError(e instanceof Error ? e.message : 'create_failed')
+    } finally {
+      setCreateChannelBusy(false)
+    }
+  }
+
+  async function onRenameChannel() {
+    if (!user || !selectedChannelId) return
+    setRenameChannelBusy(true)
+    setRenameChannelError(null)
+    try {
+      const name = renameChannelName.trim()
+      if (!name) throw new Error('invalid_name')
+      const updated = await apiRenameChannel(selectedChannelId, name)
+      setRenameChannelOpen(false)
+      setChannels((prev) => prev.map((c) => (c.id === updated.channel.id ? updated.channel : c)))
+    } catch (e) {
+      setRenameChannelError(e instanceof Error ? e.message : 'rename_failed')
+    } finally {
+      setRenameChannelBusy(false)
+    }
+  }
+
+  async function onDeleteChannel() {
+    if (!user || !selectedServerId || !selectedChannelId) return
+    setDeleteChannelBusy(true)
+    setDeleteChannelError(null)
+    try {
+      const deletingId = selectedChannelId
+      await apiDeleteChannel(deletingId)
+      setDeleteChannelOpen(false)
+      const res = await apiListChannels(selectedServerId)
+      setChannels(res.channels)
+      const nextId = res.channels[0]?.id || null
+      setSelectedChannelId(nextId)
+    } catch (e) {
+      setDeleteChannelError(e instanceof Error ? e.message : 'delete_failed')
+    } finally {
+      setDeleteChannelBusy(false)
+    }
+  }
+
+  async function onCreateInvite() {
+    if (!user || !selectedServerId) return
+    setInviteBusy(true)
+    setInviteError(null)
+    try {
+      const res = await apiCreateInvite(selectedServerId)
+      setInviteCode(res.invite.code)
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : 'invite_failed')
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  async function onJoinInvite() {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+    const code = joinCode.trim()
+    if (!code) return
+    setJoinBusy(true)
+    setJoinError(null)
+    try {
+      const res = await apiJoinInvite(code)
+      await refreshMeAndServers()
+      setSelectedServerId(res.serverId)
+      setInviteOpen(false)
+      setJoinCode('')
+    } catch (e) {
+      setJoinError(e instanceof Error ? e.message : 'join_failed')
+    } finally {
+      setJoinBusy(false)
+    }
   }
 
   async function onSubmitAuth() {
@@ -306,7 +450,24 @@ function App() {
               </div>
             </div>
 
-            <div className="mb-2 text-xs font-extrabold tracking-wide text-px-text2">TEXT CHANNELS</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-xs font-extrabold tracking-wide text-px-text2">TEXT CHANNELS</div>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="h-7 w-7 rounded-lg bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
+                  if (!user) {
+                    setAuthMode('login')
+                    setAuthOpen(true)
+                    return
+                  }
+                  setCreateChannelOpen(true)
+                }}
+              >
+                +
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1 px-3">
@@ -377,7 +538,42 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="secondary" className="h-9 bg-white/5 text-px-text2 hover:bg-white/10">Invite</Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
+                  setInviteError(null)
+                  setInviteCode('')
+                  setJoinError(null)
+                  setInviteOpen(true)
+                }}
+              >
+                Invite
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
+                  const cur = channels.find((c) => c.id === selectedChannelId)
+                  setRenameChannelName(cur?.name || '')
+                  setRenameChannelError(null)
+                  setRenameChannelOpen(true)
+                }}
+                disabled={!user || !selectedChannelId}
+              >
+                Rename
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
+                  setDeleteChannelError(null)
+                  setDeleteChannelOpen(true)
+                }}
+                disabled={!user || !selectedChannelId}
+              >
+                Delete
+              </Button>
               {user ? (
                 <Button variant="secondary" className="h-9 bg-white/5 text-px-text2 hover:bg-white/10" onClick={onLogout}>
                   Logout
@@ -431,12 +627,12 @@ function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onSendMessage()
                 }}
-                disabled={!selectedChannelId}
+                disabled={!selectedChannelId || !socketConnected}
               />
               <Button
                 className="h-9 rounded-xl bg-px-brand px-4 font-extrabold text-white hover:bg-px-brand/90"
                 onClick={onSendMessage}
-                disabled={!selectedChannelId}
+                disabled={!selectedChannelId || !socketConnected}
               >
                 Send
               </Button>
@@ -450,12 +646,187 @@ function App() {
           </div>
           <ScrollArea className="flex-1 px-3">
             <div className="space-y-2 pb-3">
-              <Member name="Guest" status="offline" />
-              <Member name="PXBot" status="online" />
+              {members.length ? (
+                members.map((m) => <Member key={m.id} name={m.username} status="online" />)
+              ) : (
+                <Member name="No members" status="offline" />
+              )}
             </div>
           </ScrollArea>
         </aside>
       </div>
+
+      <Dialog
+        open={createChannelOpen}
+        onOpenChange={(o) => {
+          setCreateChannelOpen(o)
+          if (!o) {
+            setCreateChannelError(null)
+            setNewChannelName('')
+          }
+        }}
+      >
+        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+          <DialogHeader>
+            <DialogTitle>Create channel</DialogTitle>
+            <DialogDescription className="text-px-text2">Create a new text channel.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Input
+              value={newChannelName}
+              onChange={(e) => setNewChannelName(e.target.value)}
+              placeholder="channel-name"
+              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onCreateChannel()
+              }}
+            />
+            {createChannelError ? <div className="text-sm font-semibold text-red-400">{createChannelError}</div> : null}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="secondary"
+              className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+              onClick={() => setCreateChannelOpen(false)}
+              disabled={createChannelBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+              onClick={onCreateChannel}
+              disabled={createChannelBusy}
+            >
+              {createChannelBusy ? 'Creating…' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameChannelOpen}
+        onOpenChange={(o) => {
+          setRenameChannelOpen(o)
+          if (!o) setRenameChannelError(null)
+        }}
+      >
+        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+          <DialogHeader>
+            <DialogTitle>Rename channel</DialogTitle>
+            <DialogDescription className="text-px-text2">Change the channel name.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Input
+              value={renameChannelName}
+              onChange={(e) => setRenameChannelName(e.target.value)}
+              placeholder="channel-name"
+              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onRenameChannel()
+              }}
+            />
+            {renameChannelError ? <div className="text-sm font-semibold text-red-400">{renameChannelError}</div> : null}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="secondary"
+              className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+              onClick={() => setRenameChannelOpen(false)}
+              disabled={renameChannelBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+              onClick={onRenameChannel}
+              disabled={renameChannelBusy}
+            >
+              {renameChannelBusy ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteChannelOpen}
+        onOpenChange={(o) => {
+          setDeleteChannelOpen(o)
+          if (!o) setDeleteChannelError(null)
+        }}
+      >
+        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+          <DialogHeader>
+            <DialogTitle>Delete channel</DialogTitle>
+            <DialogDescription className="text-px-text2">This deletes the channel and its messages.</DialogDescription>
+          </DialogHeader>
+          {deleteChannelError ? <div className="text-sm font-semibold text-red-400">{deleteChannelError}</div> : null}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="secondary"
+              className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+              onClick={() => setDeleteChannelOpen(false)}
+              disabled={deleteChannelBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="h-9 bg-red-500/80 text-white hover:bg-red-500"
+              onClick={onDeleteChannel}
+              disabled={deleteChannelBusy}
+            >
+              {deleteChannelBusy ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={inviteOpen}
+        onOpenChange={(o) => {
+          setInviteOpen(o)
+          if (!o) {
+            setInviteError(null)
+            setInviteCode('')
+            setJoinError(null)
+          }
+        }}
+      >
+        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+          <DialogHeader>
+            <DialogTitle>Invites</DialogTitle>
+            <DialogDescription className="text-px-text2">Create an invite link or join using a code.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+                onClick={onCreateInvite}
+                disabled={!selectedServerId || inviteBusy}
+              >
+                {inviteBusy ? 'Creating…' : 'Create invite'}
+              </Button>
+              {inviteCode ? <div className="text-sm text-px-text2">Code: {inviteCode}</div> : null}
+            </div>
+            {inviteError ? <div className="text-sm font-semibold text-red-400">{inviteError}</div> : null}
+            <Separator className="bg-white/10" />
+            <div className="grid gap-2">
+              <Input
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
+                placeholder="Invite code"
+                className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onJoinInvite()
+                }}
+              />
+              <Button className="h-9 bg-white/10 text-px-text hover:bg-white/15" onClick={onJoinInvite} disabled={joinBusy}>
+                {joinBusy ? 'Joining…' : 'Join server'}
+              </Button>
+              {joinError ? <div className="text-sm font-semibold text-red-400">{joinError}</div> : null}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={authOpen}

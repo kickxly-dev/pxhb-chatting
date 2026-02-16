@@ -28,6 +28,8 @@ model User {
   memberships  Membership[]
   serversOwned Server[]     @relation("ServerOwner")
   messages     Message[]
+
+  invitesCreated Invite[]   @relation("InviteCreator")
 }
 
 model Server {
@@ -42,6 +44,23 @@ model Server {
 
   memberships Membership[]
   channels    Channel[]
+
+  invites     Invite[]
+}
+
+model Invite {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  code      String   @unique
+
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id])
+
+  creatorId String
+  creator   User     @relation("InviteCreator", fields: [creatorId], references: [id])
+
+  @@index([serverId, createdAt])
 }
 
 model Membership {
