@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: pxhb-chatting
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run build && npx prisma migrate deploy
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pxhb-chatting-db
+          property: connectionString
+
+databases:
+  - name: pxhb-chatting-db
+    plan: free
+    postgresMajorVersion: 16
