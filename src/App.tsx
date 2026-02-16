@@ -24,6 +24,7 @@ import {
   apiDeleteChannel,
   apiListFriends,
   apiListFriendRequests,
+  apiListDmThreads,
   apiJoinInvite,
   apiListChannels,
   apiListMembers,
@@ -41,6 +42,7 @@ import {
   type Channel,
   type DmMessage,
   type DmThread,
+  type DmThreadListItem,
   type Friend,
   type FriendRequest,
   type Member as ApiMember,
@@ -51,6 +53,9 @@ import {
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
+
+  const [navMode, setNavMode] = useState<'home' | 'server'>('server')
+
   const [servers, setServers] = useState<Server[]>([])
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
   const [channels, setChannels] = useState<Channel[]>([])
@@ -118,6 +123,9 @@ function App() {
   const [dmMessages, setDmMessages] = useState<DmMessage[]>([])
   const [dmText, setDmText] = useState('')
 
+  const [dmThreads, setDmThreads] = useState<DmThreadListItem[]>([])
+  const [selectedDmThreadId, setSelectedDmThreadId] = useState<string | null>(null)
+
   const initials = useMemo(() => {
     const u = user?.username?.trim()
     return u ? u.slice(0, 1).toUpperCase() : 'G'
@@ -131,6 +139,39 @@ function App() {
       setServers(list.servers)
     } else {
       setServers([])
+    }
+
+  }
+
+  async function refreshDmThreads() {
+    if (!user) {
+      setDmThreads([])
+      return
+    }
+    try {
+      const res = await apiListDmThreads()
+      setDmThreads(res.threads)
+    } catch {
+      setDmThreads([])
+    }
+  }
+
+  async function openDmThreadFromList(item: DmThreadListItem) {
+    if (!user) return
+    setNavMode('home')
+    setSelectedDmThreadId(item.id)
+    setDmWith({ id: item.otherUser.id, username: item.otherUser.username, friendshipId: '', createdAt: item.createdAt })
+    setDmThread({ id: item.id, createdAt: item.createdAt, userAId: '', userBId: '' })
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('dm:join', { threadId: item.id })
+    }
+
+    try {
+      const m = await apiListDmMessages(item.id, 100)
+      setDmMessages(m.messages)
+    } catch {
+      setDmMessages([])
     }
   }
 
@@ -267,6 +308,8 @@ function App() {
       setChannels([])
       setSelectedChannelId(null)
       setMessages([])
+      setDmThreads([])
+      setSelectedDmThreadId(null)
       return
     }
 
@@ -276,7 +319,14 @@ function App() {
   }, [user, servers, selectedServerId])
 
   useEffect(() => {
-    if (!user || !selectedServerId) {
+    if (!user) return
+    if (navMode !== 'home') return
+    refreshDmThreads()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, navMode])
+
+  useEffect(() => {
+    if (!user || !selectedServerId || navMode !== 'server') {
       setChannels([])
       setSelectedChannelId(null)
       setMembers([])
@@ -299,10 +349,10 @@ function App() {
       .then((res) => setMembers(res.members))
       .catch(() => setMembers([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, selectedServerId])
+  }, [user, selectedServerId, navMode])
 
   useEffect(() => {
-    if (!user || !selectedChannelId) {
+    if (!user || !selectedChannelId || navMode !== 'server') {
       setMessages([])
       return
     }
@@ -310,7 +360,7 @@ function App() {
     apiListMessages(selectedChannelId, 75)
       .then((res) => setMessages(res.messages))
       .catch(() => setMessages([]))
-  }, [user, selectedChannelId])
+  }, [user, selectedChannelId, navMode])
 
   useEffect(() => {
     if (!user) {
@@ -388,12 +438,20 @@ function App() {
   useEffect(() => {
     if (!selectedChannelId) return
     if (!socketConnected) return
+    if (navMode !== 'server') return
     socketRef.current?.emit('channel:join', { channelId: selectedChannelId })
-  }, [selectedChannelId, socketConnected])
+  }, [selectedChannelId, socketConnected, navMode])
+
+  useEffect(() => {
+    if (!selectedDmThreadId) return
+    if (!socketConnected) return
+    if (navMode !== 'home') return
+    socketRef.current?.emit('dm:join', { threadId: selectedDmThreadId })
+  }, [selectedDmThreadId, socketConnected, navMode])
 
   function onSendMessage() {
     const content = messageText.trim()
-    if (!content || !selectedChannelId) return
+    if (!content) return
     if (!user) {
       setAuthMode('login')
       setAuthOpen(true)
@@ -405,8 +463,18 @@ function App() {
       return
     }
 
-    socketRef.current?.emit('chat:send', { channelId: selectedChannelId, content })
-    setMessageText('')
+    if (navMode === 'server') {
+      if (!selectedChannelId) return
+      socketRef.current.emit('chat:send', { channelId: selectedChannelId, content })
+      setMessageText('')
+      return
+    }
+
+    if (navMode === 'home') {
+      if (!selectedDmThreadId) return
+      socketRef.current.emit('dm:send', { threadId: selectedDmThreadId, content })
+      setMessageText('')
+    }
   }
 
   async function onCreateChannel() {
@@ -558,17 +626,37 @@ function App() {
         <aside className="bg-px-rail border-r border-white/10 p-2">
           <div className="flex h-full flex-col items-center gap-2">
             <div className="h-12 w-12 rounded-2xl bg-px-brand/90 shadow-soft grid place-items-center font-black">PX</div>
+
+            <button
+              type="button"
+              className={
+                navMode === 'home'
+                  ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black'
+                  : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black hover:bg-white/15'
+              }
+              title="Home"
+              onClick={() => {
+                setNavMode('home')
+                refreshDmThreads()
+              }}
+            >
+              @
+            </button>
+
             {servers.slice(0, 8).map((s) => (
               <button
                 key={s.id}
                 type="button"
                 className={
-                  s.id === selectedServerId
+                  navMode === 'server' && s.id === selectedServerId
                     ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black'
                     : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black hover:bg-white/15'
                 }
                 title={s.name}
-                onClick={() => setSelectedServerId(s.id)}
+                onClick={() => {
+                  setNavMode('server')
+                  setSelectedServerId(s.id)
+                }}
               >
                 {s.name.slice(0, 1).toUpperCase()}
               </button>
@@ -600,13 +688,17 @@ function App() {
               <div className="min-w-0">
                 <div className="truncate font-extrabold">PXHB Chatting</div>
                 <div className="truncate text-xs text-px-text2">
-                  {selectedServerId ? servers.find((s) => s.id === selectedServerId)?.name || 'Server' : 'No server'}
+                  {navMode === 'home'
+                    ? 'Home'
+                    : selectedServerId
+                      ? servers.find((s) => s.id === selectedServerId)?.name || 'Server'
+                      : 'No server'}
                 </div>
               </div>
             </div>
 
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-xs font-extrabold tracking-wide text-px-text2">TEXT CHANNELS</div>
+              <div className="text-xs font-extrabold tracking-wide text-px-text2">{navMode === 'home' ? 'DIRECT MESSAGES' : 'TEXT CHANNELS'}</div>
               <Button
                 variant="secondary"
                 size="icon"
@@ -617,17 +709,32 @@ function App() {
                     setAuthOpen(true)
                     return
                   }
+                  if (navMode === 'home') {
+                    setFriendsOpen(true)
+                    refreshFriendsData()
+                    return
+                  }
                   setCreateChannelOpen(true)
                 }}
               >
-                +
+                {navMode === 'home' ? '⋯' : '+'}
               </Button>
             </div>
           </div>
 
           <ScrollArea className="flex-1 px-3">
             <nav className="space-y-1 pb-3">
-              {channels.length ? (
+              {navMode === 'home' ? (
+                dmThreads.length ? (
+                  dmThreads.map((t) => (
+                    <ChannelButton key={t.id} active={t.id === selectedDmThreadId} onClick={() => openDmThreadFromList(t)}>
+                      @ {t.otherUser.username}
+                    </ChannelButton>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-sm text-px-text2">No DMs yet</div>
+                )
+              ) : channels.length ? (
                 channels.map((c) => (
                   <ChannelButton key={c.id} active={c.id === selectedChannelId} onClick={() => setSelectedChannelId(c.id)}>
                     # {c.name}
@@ -682,7 +789,9 @@ function App() {
           <header className="flex h-14 items-center justify-between border-b border-white/10 px-4">
             <div className="flex items-center gap-3">
               <div className="font-extrabold">
-                # {channels.find((c) => c.id === selectedChannelId)?.name || 'general'}
+                {navMode === 'home'
+                  ? `@ ${dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'direct-messages'}`
+                  : `# ${channels.find((c) => c.id === selectedChannelId)?.name || 'general'}`}
               </div>
               <div className="text-sm text-px-text2">
                 API: {apiHealth}
@@ -769,19 +878,20 @@ function App() {
               <div className="mx-auto flex max-w-3xl flex-col gap-3">
                 {!user ? (
                   <Message who="System" text="Login to load your servers and start chatting." tone="system" />
-                ) : servers.length === 0 ? (
+                ) : navMode === 'server' && servers.length === 0 ? (
                   <Message who="System" text="You have no servers yet. Click the + in the left rail to create one." tone="system" />
-                ) : !selectedChannelId ? (
+                ) : navMode === 'server' && !selectedChannelId ? (
                   <Message who="System" text="Select a channel to load messages." tone="system" />
+                ) : navMode === 'home' && !selectedDmThreadId ? (
+                  <Message who="System" text="Select a DM to start chatting." tone="system" />
                 ) : null}
-                {messages.map((m) => (
-                  <Message
-                    key={m.id}
-                    who={m.author.username}
-                    text={m.content}
-                    tone={m.author.id === user?.id ? 'me' : 'bot'}
-                  />
-                ))}
+                {navMode === 'home'
+                  ? dmMessages.map((m) => (
+                      <Message key={m.id} who={m.author.username} text={m.content} tone={m.author.id === user?.id ? 'me' : 'bot'} />
+                    ))
+                  : messages.map((m) => (
+                      <Message key={m.id} who={m.author.username} text={m.content} tone={m.author.id === user?.id ? 'me' : 'bot'} />
+                    ))}
               </div>
             </div>
           </ScrollArea>
@@ -793,18 +903,26 @@ function App() {
               </Button>
               <Input
                 className="h-10 flex-1 border-0 bg-transparent text-px-text placeholder:text-px-text2 focus-visible:ring-0"
-                placeholder={selectedChannelId ? 'Message this channel' : 'Select a channel'}
+                placeholder={
+                  navMode === 'home'
+                    ? selectedDmThreadId
+                      ? 'Message this DM'
+                      : 'Select a DM'
+                    : selectedChannelId
+                      ? 'Message this channel'
+                      : 'Select a channel'
+                }
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onSendMessage()
                 }}
-                disabled={!selectedChannelId || !socketConnected}
+                disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
               />
               <Button
                 className="h-9 rounded-xl bg-px-brand px-4 font-extrabold text-white hover:bg-px-brand/90"
                 onClick={onSendMessage}
-                disabled={!selectedChannelId || !socketConnected}
+                disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
               >
                 Send
               </Button>
@@ -812,20 +930,33 @@ function App() {
           </footer>
         </main>
 
-        <aside className="bg-px-panel border-l border-white/10 flex h-full flex-col">
-          <div className="p-3">
-            <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">MEMBERS</div>
-          </div>
-          <ScrollArea className="flex-1 px-3">
-            <div className="space-y-2 pb-3">
-              {members.length ? (
-                members.map((m) => <Member key={m.id} name={m.username} status="online" />)
-              ) : (
-                <Member name="No members" status="offline" />
-              )}
+        {navMode === 'server' ? (
+          <aside className="bg-px-panel border-l border-white/10 flex h-full flex-col">
+            <div className="p-3">
+              <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">MEMBERS</div>
             </div>
-          </ScrollArea>
-        </aside>
+            <ScrollArea className="flex-1 px-3">
+              <div className="space-y-2 pb-3">
+                {members.length ? (
+                  members.map((m) => <Member key={m.id} name={m.username} status="online" />)
+                ) : (
+                  <Member name="No members" status="offline" />
+                )}
+              </div>
+            </ScrollArea>
+          </aside>
+        ) : (
+          <aside className="bg-px-panel border-l border-white/10 flex h-full flex-col">
+            <div className="p-3">
+              <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">HOME</div>
+            </div>
+            <ScrollArea className="flex-1 px-3">
+              <div className="space-y-2 pb-3">
+                <Member name={user ? user.username : 'Guest'} status={user ? 'online' : 'offline'} />
+              </div>
+            </ScrollArea>
+          </aside>
+        )}
       </div>
 
       <Dialog
