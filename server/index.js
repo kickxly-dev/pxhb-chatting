@@ -129,6 +129,21 @@ io.use((socket, next) => {
   })
 })
 
+io.use(async (socket, next) => {
+  try {
+    const isAdmin = socket.request?.session?.isAdmin === true
+    if (isAdmin) return next()
+
+    const cfg = await prisma.siteConfig.findUnique({ where: { id: 'site' }, select: { lockdownEnabled: true } })
+    if (cfg?.lockdownEnabled) {
+      return next(new Error('lockdown'))
+    }
+  } catch {
+    // fail open
+  }
+  next()
+})
+
 io.on('connection', (socket) => {
   socket.emit('hello', { ok: true })
 
@@ -163,6 +178,35 @@ io.on('connection', (socket) => {
       socket.join(`channel:${channelId}`)
     } catch {
       socket.emit('chat:error', { message: 'Failed to join channel' })
+    }
+  })
+
+  socket.on('channel:typing', async (payload) => {
+    try {
+      const { channelId, typing } = payload || {}
+      if (!channelId || typeof typing !== 'boolean') return
+
+      const userId = socket.data.userId
+      if (!userId) return
+
+      const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true } })
+      if (!channel) return
+
+      const membership = await prisma.membership.findUnique({
+        where: { userId_serverId: { userId, serverId: channel.serverId } },
+        select: { id: true },
+      })
+      if (!membership) return
+
+      const u = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } })
+      io.to(`channel:${channelId}`).emit('channel:typing', {
+        channelId,
+        userId,
+        username: u?.username || 'unknown',
+        typing,
+      })
+    } catch {
+      // ignore
     }
   })
 
@@ -473,6 +517,30 @@ io.on('connection', (socket) => {
       socket.join(`dm:${threadId}`)
     } catch {
       socket.emit('chat:error', { message: 'Failed to join dm' })
+    }
+  })
+
+  socket.on('dm:typing', async (payload) => {
+    try {
+      const { threadId, typing } = payload || {}
+      if (!threadId || typeof typing !== 'boolean') return
+
+      const userId = socket.data.userId
+      if (!userId) return
+
+      const thread = await prisma.dmThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) return
+
+      const u = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } })
+      io.to(`dm:${threadId}`).emit('dm:typing', {
+        threadId,
+        userId,
+        username: u?.username || 'unknown',
+        typing,
+      })
+    } catch {
+      // ignore
     }
   })
 
@@ -869,6 +937,8 @@ app.patch('/api/admin/site', requireAuth, requireAdmin, async (req, res) => {
   await audit(next.lockdownEnabled ? 'site.lockdown_enabled' : 'site.lockdown_disabled', req.session.userId, {
     message: next.lockdownMessage,
   })
+
+  io.emit('site:config', { lockdownEnabled: next.lockdownEnabled, lockdownMessage: next.lockdownMessage })
 
   res.json({ ok: true, config: next })
 })

@@ -198,6 +198,15 @@ function App() {
   const [dmMessages, setDmMessages] = useState<DmMessage[]>([])
   const [dmText, setDmText] = useState('')
 
+  const [channelTypers, setChannelTypers] = useState<Record<string, Record<string, { username: string; at: number }>>>({})
+  const [dmTypers, setDmTypers] = useState<Record<string, Record<string, { username: string; at: number }>>>({})
+  const typingStateRef = useRef<{ channelKey: string | null; dmKey: string | null; lastChannelEmitAt: number; lastDmEmitAt: number }>({
+    channelKey: null,
+    dmKey: null,
+    lastChannelEmitAt: 0,
+    lastDmEmitAt: 0,
+  })
+
   const [dmThreads, setDmThreads] = useState<DmThreadListItem[]>([])
   const [selectedDmThreadId, setSelectedDmThreadId] = useState<string | null>(null)
   const [dmUnread, setDmUnread] = useState<Record<string, number>>({})
@@ -814,10 +823,45 @@ function App() {
         s.emit('dm:join', { threadId: dmThread.id })
       }
     })
+
+    s.on('channel:typing', (payload: { channelId: string; userId: string; username: string; typing: boolean }) => {
+      if (!payload?.channelId || !payload?.userId) return
+      if (payload.userId === user?.id) return
+      const now = Date.now()
+      setChannelTypers((prev) => {
+        const room = prev[payload.channelId] ? { ...prev[payload.channelId] } : {}
+        if (payload.typing) room[payload.userId] = { username: payload.username, at: now }
+        else delete room[payload.userId]
+        return { ...prev, [payload.channelId]: room }
+      })
+    })
+
+    s.on('dm:typing', (payload: { threadId: string; userId: string; username: string; typing: boolean }) => {
+      if (!payload?.threadId || !payload?.userId) return
+      if (payload.userId === user?.id) return
+      const now = Date.now()
+      setDmTypers((prev) => {
+        const room = prev[payload.threadId] ? { ...prev[payload.threadId] } : {}
+        if (payload.typing) room[payload.userId] = { username: payload.username, at: now }
+        else delete room[payload.userId]
+        return { ...prev, [payload.threadId]: room }
+      })
+    })
     s.on('disconnect', () => setSocketConnected(false))
     s.on('connect_error', (err) => {
       setSocketConnected(false)
       setSocketError(err?.message || 'connect_error')
+    })
+
+    s.on('site:config', (cfg: { lockdownEnabled: boolean; lockdownMessage: string }) => {
+      setSiteConfig(cfg)
+      if (cfg.lockdownEnabled && !adminAuthed) {
+        try {
+          s.disconnect()
+        } catch {
+          // ignore
+        }
+      }
     })
 
     s.on('chat:message', (msg: ApiMessage) => {
@@ -928,6 +972,86 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedChannelId])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const cutoff = Date.now() - 3000
+      setChannelTypers((prev) => {
+        const next = { ...prev }
+        for (const channelId of Object.keys(next)) {
+          const room = { ...next[channelId] }
+          for (const uid of Object.keys(room)) {
+            if (room[uid].at < cutoff) delete room[uid]
+          }
+          next[channelId] = room
+        }
+        return next
+      })
+      setDmTypers((prev) => {
+        const next = { ...prev }
+        for (const threadId of Object.keys(next)) {
+          const room = { ...next[threadId] }
+          for (const uid of Object.keys(room)) {
+            if (room[uid].at < cutoff) delete room[uid]
+          }
+          next[threadId] = room
+        }
+        return next
+      })
+    }, 750)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const typingLabel = useMemo(() => {
+    if (navMode === 'server' && selectedChannelId) {
+      const room = channelTypers[selectedChannelId] || {}
+      const names = Object.values(room)
+        .sort((a, b) => b.at - a.at)
+        .map((x) => x.username)
+        .slice(0, 3)
+      if (!names.length) return ''
+      if (names.length === 1) return `${names[0]} is typing…`
+      if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
+      return `${names[0]}, ${names[1]} and others are typing…`
+    }
+    if (navMode === 'home' && selectedDmThreadId) {
+      const room = dmTypers[selectedDmThreadId] || {}
+      const names = Object.values(room)
+        .sort((a, b) => b.at - a.at)
+        .map((x) => x.username)
+        .slice(0, 3)
+      if (!names.length) return ''
+      if (names.length === 1) return `${names[0]} is typing…`
+      if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
+      return `${names[0]}, ${names[1]} and others are typing…`
+    }
+    return ''
+  }, [navMode, selectedChannelId, selectedDmThreadId, channelTypers, dmTypers])
+
+  function emitTyping(typing: boolean) {
+    if (!socketConnected || !socketRef.current) return
+    if (!user) return
+    const now = Date.now()
+    if (navMode === 'server') {
+      const channelId = selectedChannelId
+      if (!channelId) return
+      if (!typing && typingStateRef.current.channelKey !== channelId) return
+      if (typing && now - typingStateRef.current.lastChannelEmitAt < 600) return
+      typingStateRef.current.channelKey = typing ? channelId : null
+      typingStateRef.current.lastChannelEmitAt = now
+      socketRef.current.emit('channel:typing', { channelId, typing })
+      return
+    }
+    if (navMode === 'home') {
+      const threadId = selectedDmThreadId
+      if (!threadId) return
+      if (!typing && typingStateRef.current.dmKey !== threadId) return
+      if (typing && now - typingStateRef.current.lastDmEmitAt < 600) return
+      typingStateRef.current.dmKey = typing ? threadId : null
+      typingStateRef.current.lastDmEmitAt = now
+      socketRef.current.emit('dm:typing', { threadId, typing })
+    }
+  }
 
   useEffect(() => {
     if (!selectedChannelId) return
@@ -1764,6 +1888,7 @@ function App() {
 
           <footer className="border-t border-white/10 p-3">
             <div className="mx-auto flex max-w-3xl flex-col gap-2">
+              {typingLabel ? <div className="px-2 text-xs font-extrabold text-px-text2">{typingLabel}</div> : null}
               {replyingTo ? (
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
                   <div className="min-w-0">
@@ -1789,6 +1914,12 @@ function App() {
               </Button>
               <Input
                 className="h-10 flex-1 border-0 bg-transparent text-px-text placeholder:text-px-text2 focus-visible:ring-0"
+                onChange={(e) => {
+                  setMessageText(e.target.value)
+                  emitTyping(true)
+                }}
+                onBlur={() => emitTyping(false)}
+                value={messageText}
                 placeholder={
                   navMode === 'home'
                     ? selectedDmThreadId
@@ -1798,10 +1929,12 @@ function App() {
                       ? 'Message this channel'
                       : 'Select a channel'
                 }
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') onSendMessage()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    onSendMessage()
+                    emitTyping(false)
+                  }
                 }}
                 disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
               />
