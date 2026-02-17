@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
+import { Hash, MessageCircle, Plus, Settings, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -130,6 +131,15 @@ function App() {
     const u = user?.username?.trim()
     return u ? u.slice(0, 1).toUpperCase() : 'G'
   }, [user?.username])
+
+  const formatShortTime = useMemo(() => {
+    return (iso: string | null) => {
+      if (!iso) return ''
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return ''
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+  }, [])
 
   async function refreshMeAndServers() {
     const me = await apiMe()
@@ -631,8 +641,8 @@ function App() {
               type="button"
               className={
                 navMode === 'home'
-                  ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black'
-                  : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black hover:bg-white/15'
+                  ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black transition-colors'
+                  : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black transition-colors hover:bg-white/15'
               }
               title="Home"
               onClick={() => {
@@ -640,7 +650,7 @@ function App() {
                 refreshDmThreads()
               }}
             >
-              @
+              <MessageCircle className="h-5 w-5 text-px-text" />
             </button>
 
             {servers.slice(0, 8).map((s) => (
@@ -649,8 +659,8 @@ function App() {
                 type="button"
                 className={
                   navMode === 'server' && s.id === selectedServerId
-                    ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black'
-                    : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black hover:bg-white/15'
+                    ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black transition-colors'
+                    : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black transition-colors hover:bg-white/15'
                 }
                 title={s.name}
                 onClick={() => {
@@ -675,9 +685,11 @@ function App() {
                 setCreateServerOpen(true)
               }}
             >
-              +
+              <Plus className="h-5 w-5" />
             </Button>
-            <div className="mt-auto h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm">⚙</div>
+            <div className="mt-auto h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm text-px-text2">
+              <Settings className="h-5 w-5" />
+            </div>
           </div>
         </aside>
 
@@ -727,17 +739,38 @@ function App() {
               {navMode === 'home' ? (
                 dmThreads.length ? (
                   dmThreads.map((t) => (
-                    <ChannelButton key={t.id} active={t.id === selectedDmThreadId} onClick={() => openDmThreadFromList(t)}>
-                      @ {t.otherUser.username}
+                    <ChannelButton
+                      key={t.id}
+                      active={t.id === selectedDmThreadId}
+                      onClick={() => openDmThreadFromList(t)}
+                      leading={
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback className="text-[10px]">{t.otherUser.username.slice(0, 1).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      }
+                      trailing={<span className="text-[10px] text-px-text2">{formatShortTime(t.lastMessageAt)}</span>}
+                      subtitle={t.lastMessageAt ? 'Active' : 'Say hi'}
+                    >
+                      {t.otherUser.username}
                     </ChannelButton>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-px-text2">No DMs yet</div>
+                  <div className="px-3 py-3 text-sm text-px-text2">
+                    Start a DM from
+                    {' '}
+                    <span className="font-semibold text-px-text">Friends</span>
+                    .
+                  </div>
                 )
               ) : channels.length ? (
                 channels.map((c) => (
-                  <ChannelButton key={c.id} active={c.id === selectedChannelId} onClick={() => setSelectedChannelId(c.id)}>
-                    # {c.name}
+                  <ChannelButton
+                    key={c.id}
+                    active={c.id === selectedChannelId}
+                    onClick={() => setSelectedChannelId(c.id)}
+                    leading={<Hash className="h-4 w-4 text-px-text2" />}
+                  >
+                    {c.name}
                   </ChannelButton>
                 ))
               ) : (
@@ -817,6 +850,7 @@ function App() {
                   refreshFriendsData()
                 }}
               >
+                <Users className="mr-2 h-4 w-4" />
                 Friends
               </Button>
               <Button
@@ -1448,22 +1482,35 @@ function ChannelButton({
   active,
   children,
   onClick,
+  leading,
+  trailing,
+  subtitle,
 }: {
   active?: boolean
   children: React.ReactNode
   onClick?: () => void
+  leading?: React.ReactNode
+  trailing?: React.ReactNode
+  subtitle?: string
 }) {
   return (
     <button
       className={
         active
-          ? 'w-full rounded-lg bg-white/10 px-3 py-2 text-left font-semibold'
-          : 'w-full rounded-lg px-3 py-2 text-left font-semibold text-px-text2 hover:bg-white/5'
+          ? 'w-full rounded-xl bg-white/10 px-3 py-2 text-left transition-colors'
+          : 'w-full rounded-xl px-3 py-2 text-left text-px-text2 transition-colors hover:bg-white/5'
       }
       type="button"
       onClick={onClick}
     >
-      {children}
+      <div className="flex items-center gap-2">
+        {leading ? <div className="shrink-0">{leading}</div> : null}
+        <div className="min-w-0 flex-1">
+          <div className={active ? 'truncate text-sm font-semibold text-px-text' : 'truncate text-sm font-semibold'}>{children}</div>
+          {subtitle ? <div className="truncate text-xs text-px-text2">{subtitle}</div> : null}
+        </div>
+        {trailing ? <div className="shrink-0">{trailing}</div> : null}
+      </div>
     </button>
   )
 }
