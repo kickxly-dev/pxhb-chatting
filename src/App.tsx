@@ -29,6 +29,8 @@ import {
   apiAdminMe,
   apiAdminOverview,
   apiAdminServers,
+  apiAdminSite,
+  apiAdminUpdateSite,
   apiAdminUsers,
   apiCancelFriendRequest,
   apiCreateServer,
@@ -63,6 +65,7 @@ import {
   apiRegister,
   apiSendDmMessage,
   apiSendFriendRequest,
+  apiSite,
   type AdminAuditLog,
   type AdminOverview,
   type AdminServer,
@@ -76,6 +79,7 @@ import {
   type Member as ApiMember,
   type Message as ApiMessage,
   type ReactionSummary,
+  type SiteConfig,
   type Server,
   type User,
 } from '@/lib/api'
@@ -84,6 +88,8 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
 
   const [booting, setBooting] = useState(true)
+
+  const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(null)
 
   const [toasts, setToasts] = useState<{ id: string; title: string; message?: string; tone: 'default' | 'success' | 'error' }[]>([])
   const toastTimersRef = useRef<Record<string, number>>({})
@@ -129,6 +135,10 @@ function App() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [adminServers, setAdminServers] = useState<AdminServer[]>([])
   const [adminAudit, setAdminAudit] = useState<AdminAuditLog[]>([])
+
+  const [adminSiteBusy, setAdminSiteBusy] = useState(false)
+  const [adminSiteMessage, setAdminSiteMessage] = useState('')
+  const [adminSiteEnabled, setAdminSiteEnabled] = useState(false)
 
   const [pinsOpen, setPinsOpen] = useState(false)
   const [pinsBusy, setPinsBusy] = useState(false)
@@ -197,6 +207,45 @@ function App() {
       if (Number.isNaN(d.getTime())) return ''
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
+  }, [])
+
+  async function refreshAdminSite() {
+    if (!user || !adminAuthed) return
+    setAdminSiteBusy(true)
+    try {
+      const res = await apiAdminSite()
+      setAdminSiteEnabled(res.config.lockdownEnabled)
+      setAdminSiteMessage(res.config.lockdownMessage)
+    } catch (e) {
+      pushToast('Admin', e instanceof Error ? e.message : 'admin_site_failed', 'error')
+    } finally {
+      setAdminSiteBusy(false)
+    }
+  }
+
+  async function onSaveAdminSite() {
+    if (!user || !adminAuthed) return
+    setAdminSiteBusy(true)
+    try {
+      const res = await apiAdminUpdateSite({ lockdownEnabled: adminSiteEnabled, lockdownMessage: adminSiteMessage })
+      setSiteConfig(res.config)
+      pushToast('Lockdown', res.config.lockdownEnabled ? 'Enabled' : 'Disabled', 'success')
+    } catch (e) {
+      pushToast('Lockdown', e instanceof Error ? e.message : 'save_failed', 'error')
+    } finally {
+      setAdminSiteBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      apiSite()
+        .then((r: { config: SiteConfig }) => setSiteConfig(r.config))
+        .catch(() => {
+          // ignore
+        })
+    }, 5000)
+    return () => window.clearInterval(id)
   }, [])
 
   async function onTogglePin(messageId: string, pinned: boolean) {
@@ -594,6 +643,9 @@ function App() {
         setUser(null)
         setServers([])
       }),
+      apiSite()
+        .then((r) => setSiteConfig(r.config))
+        .catch(() => setSiteConfig({ lockdownEnabled: false, lockdownMessage: 'The site is temporarily locked down.' })),
       fetch('/api/health', { credentials: 'include' })
         .then((r) => (r.ok ? r.json() : null))
         .then((j) => {
@@ -1094,6 +1146,51 @@ function App() {
     )
   }
 
+  if (siteConfig?.lockdownEnabled && !adminAuthed) {
+    return (
+      <div className="h-full w-full bg-black">
+        <div className="relative grid h-full w-full place-items-center overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(239,68,68,0.55),transparent_55%)]" />
+          <div className="pointer-events-none absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_bottom,rgba(239,68,68,0.35),transparent_55%)]" />
+          <div className="pointer-events-none absolute inset-0 opacity-40 [background:repeating-linear-gradient(135deg,rgba(239,68,68,0.20)_0px,rgba(239,68,68,0.20)_12px,transparent_12px,transparent_28px)]" />
+
+          <div className="relative w-full max-w-lg px-6">
+            <div className="rounded-3xl border border-red-500/40 bg-red-500/10 p-8 shadow-soft">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-extrabold tracking-[0.3em] text-red-200">LOCKDOWN</div>
+                  <div className="mt-1 text-3xl font-black text-white">PXHB Chatting</div>
+                </div>
+                <div className="h-3 w-3 rounded-full bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.9)] animate-pulse" />
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-red-500/30 bg-black/30 px-4 py-3 text-sm text-red-100">
+                {siteConfig.lockdownMessage}
+              </div>
+
+              <div className="mt-6 text-xs text-red-200/80">Protected by Equinox V1</div>
+
+              <div className="mt-6 flex items-center gap-2">
+                <Button
+                  className="bg-white/10 text-white hover:bg-white/20"
+                  onClick={() => {
+                    setAuthMode('login')
+                    setAuthOpen(true)
+                  }}
+                >
+                  Admin Login
+                </Button>
+                <Button variant="secondary" className="bg-white/5 text-red-100 hover:bg-white/10" onClick={() => window.location.reload()}>
+                  Reload
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full w-full bg-px-bg">
       <div className="pointer-events-none fixed right-4 top-4 z-50 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2">
@@ -1406,7 +1503,10 @@ function App() {
                 onClick={() => {
                   setAdminOpen(true)
                   setAdminError(null)
-                  if (user && adminAuthed) refreshAdminData()
+                  if (user && adminAuthed) {
+                    refreshAdminData()
+                    refreshAdminSite()
+                  }
                 }}
                 disabled={!user}
               >
@@ -1733,7 +1833,10 @@ function App() {
         open={adminOpen}
         onOpenChange={(o) => {
           setAdminOpen(o)
-          if (o && user && adminAuthed) refreshAdminData()
+          if (o && user && adminAuthed) {
+            refreshAdminData()
+            refreshAdminSite()
+          }
         }}
       >
         <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-3xl">
@@ -1757,6 +1860,29 @@ function App() {
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">SITE LOCKDOWN</div>
+                  <div className={adminSiteEnabled ? 'text-xs font-extrabold text-red-300' : 'text-xs font-extrabold text-emerald-300'}>
+                    {adminSiteEnabled ? 'ENABLED' : 'DISABLED'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    className={adminSiteEnabled ? 'h-9 bg-red-500/20 text-red-100 hover:bg-red-500/30' : 'h-9 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'}
+                    onClick={() => setAdminSiteEnabled((v) => !v)}
+                    disabled={adminSiteBusy}
+                  >
+                    {adminSiteEnabled ? 'Disable' : 'Enable'}
+                  </Button>
+                  <Input value={adminSiteMessage} onChange={(e) => setAdminSiteMessage(e.target.value)} placeholder="Lockdown message" />
+                  <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={onSaveAdminSite} disabled={adminSiteBusy}>
+                    Save
+                  </Button>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="text-xs font-extrabold tracking-wide text-px-text2">OVERVIEW</div>
                 <Button variant="secondary" className="h-8 bg-white/5 text-px-text2 hover:bg-white/10" onClick={refreshAdminData} disabled={adminBusy}>

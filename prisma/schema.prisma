@@ -52,6 +52,8 @@ model User {
   dmMessageReactions DmMessageReaction[]
 
   auditLogs AuditLog[]
+
+  updatedSiteConfigs SiteConfig[]
 }
 
 model Server {
@@ -169,6 +171,18 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([action, createdAt])
+}
+
+model SiteConfig {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lockdownEnabled Boolean  @default(false)
+  lockdownMessage String   @default("The site is temporarily locked down.")
+
+  updatedById     String?
+  updatedBy       User?    @relation(fields: [updatedById], references: [id])
 }
 
 model FriendRequest {

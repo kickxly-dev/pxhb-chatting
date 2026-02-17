@@ -14,8 +14,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<Api
   const data = (await res.json().catch(() => null)) as unknown
 
   if (!res.ok) {
-    const msg = (data as any)?.error || `http_${res.status}`
-    throw new Error(msg)
+    const err = (data as any)?.error || `http_${res.status}`
+    const details = (data as any)?.message
+    throw new Error(typeof details === 'string' && details ? `${err}:${details}` : err)
   }
 
   if (!data || typeof data !== 'object' || (data as any).ok !== true) {
@@ -76,6 +77,8 @@ export type DmMessage = {
   reactions?: ReactionSummary[]
 }
 
+export type SiteConfig = { lockdownEnabled: boolean; lockdownMessage: string }
+
 export async function apiMe() {
   return apiFetch<{ user: User | null }>('/api/auth/me')
 }
@@ -96,6 +99,10 @@ export async function apiRegister(username: string, password: string) {
 
 export async function apiLogout() {
   return apiFetch<Record<string, never>>('/api/auth/logout', { method: 'POST' })
+}
+
+export async function apiSite() {
+  return apiFetch<{ config: SiteConfig }>('/api/site')
 }
 
 export async function apiListServers() {
@@ -278,4 +285,15 @@ export async function apiAdminServers(limit = 50) {
 
 export async function apiAdminAudit(limit = 50) {
   return apiFetch<{ logs: AdminAuditLog[] }>(`/api/admin/audit?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiAdminSite() {
+  return apiFetch<{ config: SiteConfig }>('/api/admin/site')
+}
+
+export async function apiAdminUpdateSite(payload: { lockdownEnabled: boolean; lockdownMessage: string }) {
+  return apiFetch<{ config: SiteConfig }>('/api/admin/site', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
 }
