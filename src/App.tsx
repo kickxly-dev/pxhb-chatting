@@ -51,6 +51,7 @@ import {
   apiListDmThreads,
   apiPinDmMessage,
   apiPinMessage,
+  apiPresence,
   apiSearchChannel,
   apiSearchDm,
   apiUnpinDmMessage,
@@ -83,9 +84,11 @@ import {
   type FriendRequest,
   type Member as ApiMember,
   type Message as ApiMessage,
+  type PresenceEntry,
+  type PresenceStatus,
   type ReactionSummary,
-  type SiteConfig,
   type Server,
+  type SiteConfig,
   type User,
 } from '@/lib/api'
 
@@ -117,6 +120,8 @@ function App() {
   const [membersLoading, setMembersLoading] = useState(false)
 
   const [members, setMembers] = useState<ApiMember[]>([])
+
+  const [presenceByUserId, setPresenceByUserId] = useState<Record<string, { status: PresenceStatus; lastSeenAt: string | null }>>({})
 
   const socketRef = useRef<Socket | null>(null)
   const [socketConnected, setSocketConnected] = useState(false)
@@ -229,6 +234,22 @@ function App() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   }, [])
+
+  function applyPresence(entries: PresenceEntry[]) {
+    setPresenceByUserId((prev) => {
+      const next = { ...prev }
+      for (const e of entries) next[e.userId] = { status: e.status, lastSeenAt: e.lastSeenAt }
+      return next
+    })
+  }
+
+  function getPresenceFor(userId: string): { status: 'online' | 'idle' | 'offline'; lastSeenAt: string | null } {
+    const p = presenceByUserId[userId]
+    const s = p?.status || 'OFFLINE'
+    if (s === 'ONLINE') return { status: 'online', lastSeenAt: p?.lastSeenAt || null }
+    if (s === 'IDLE') return { status: 'idle', lastSeenAt: p?.lastSeenAt || null }
+    return { status: 'offline', lastSeenAt: p?.lastSeenAt || null }
+  }
 
   async function onAdminUnlockOnly() {
     setAdminBusy(true)
@@ -895,6 +916,29 @@ function App() {
       }
     })
 
+    s.on('presence:changed', (payload: { userId: string; status: PresenceStatus; lastSeenAt: string | null }) => {
+      applyPresence([{ userId: payload.userId, status: payload.status, lastSeenAt: payload.lastSeenAt }])
+    })
+
+    const onFocus = () => {
+      try {
+        s.emit('presence:update', { status: 'ONLINE' })
+      } catch {
+        // ignore
+      }
+    }
+
+    const onBlur = () => {
+      try {
+        s.emit('presence:update', { status: 'IDLE' })
+      } catch {
+        // ignore
+      }
+    }
+
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+
     s.on('chat:message', (msg: ApiMessage) => {
       setMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev
@@ -1003,6 +1047,23 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedChannelId])
+
+  useEffect(() => {
+    if (!user) return
+
+    const ids = new Set<string>()
+    for (const m of members) ids.add(m.id)
+    for (const t of dmThreads) ids.add(t.otherUser.id)
+    for (const f of friends) ids.add(f.id)
+    ids.delete(user.id)
+
+    const list = Array.from(ids)
+    if (!list.length) return
+
+    apiPresence(list)
+      .then((r) => applyPresence(r.presence))
+      .catch(() => {})
+  }, [user, members, dmThreads, friends])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -1650,9 +1711,18 @@ function App() {
                       active={t.id === selectedDmThreadId}
                       onClick={() => openDmThreadFromList(t)}
                       leading={
-                        <Avatar className="h-7 w-7">
-                          <AvatarFallback className="text-[10px]">{t.otherUser.username.slice(0, 1).toUpperCase()}</AvatarFallback>
-                        </Avatar>
+                        (() => {
+                          const p = getPresenceFor(t.otherUser.id)
+                          const dot = p.status === 'online' ? 'bg-px-success' : p.status === 'idle' ? 'bg-amber-400' : 'bg-white/20'
+                          return (
+                            <div className="relative">
+                              <Avatar className="h-7 w-7">
+                                <AvatarFallback className="text-[10px]">{t.otherUser.username.slice(0, 1).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                              <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-px-panel ${dot}`} />
+                            </div>
+                          )
+                        })()
                       }
                       trailing={
                         <div className="flex items-center gap-2">
@@ -1664,7 +1734,12 @@ function App() {
                           <span className="text-[10px] text-px-text2">{formatShortTime(t.lastMessageAt)}</span>
                         </div>
                       }
-                      subtitle={t.lastMessageAt ? 'Active' : 'Say hi'}
+                      subtitle={(() => {
+                        const p = getPresenceFor(t.otherUser.id)
+                        if (p.status === 'online') return 'Online'
+                        if (p.status === 'idle') return 'Idle'
+                        return p.lastSeenAt ? `Last seen ${new Date(p.lastSeenAt).toLocaleString()}` : 'Offline'
+                      })()}
                     >
                       {t.otherUser.username}
                     </ChannelButton>
@@ -2090,7 +2165,10 @@ function App() {
                     ))}
                   </div>
                 ) : members.length ? (
-                  members.map((m) => <Member key={m.id} name={m.username} status="online" />)
+                  members.map((m) => {
+                    const p = getPresenceFor(m.id)
+                    return <Member key={m.id} name={m.username} status={p.status} lastSeenAt={p.lastSeenAt} />
+                  })
                 ) : (
                   <Member name="No members" status="offline" />
                 )}
@@ -2967,8 +3045,8 @@ function Message({
   )
 }
 
-function Member({ name, status }: { name: string; status: 'online' | 'offline' }) {
-  const dot = status === 'online' ? 'bg-px-success' : 'bg-white/20'
+function Member({ name, status, lastSeenAt }: { name: string; status: 'online' | 'idle' | 'offline'; lastSeenAt?: string | null }) {
+  const dot = status === 'online' ? 'bg-px-success' : status === 'idle' ? 'bg-amber-400' : 'bg-white/20'
   return (
     <div className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-white/5">
       <div className="relative">
@@ -2979,7 +3057,9 @@ function Member({ name, status }: { name: string; status: 'online' | 'offline' }
       </div>
       <div className="min-w-0">
         <div className="truncate font-bold">{name}</div>
-        <div className="truncate text-xs text-px-text2">{status}</div>
+        <div className="truncate text-xs text-px-text2">
+          {status === 'offline' && lastSeenAt ? `last seen ${new Date(lastSeenAt).toLocaleString()}` : status}
+        </div>
       </div>
     </div>
   )

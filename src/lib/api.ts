@@ -264,6 +264,14 @@ export async function apiSearchDm(threadId: string, q: string, limit = 50) {
   )
 }
 
+export type PresenceStatus = 'ONLINE' | 'IDLE' | 'OFFLINE'
+export type PresenceEntry = { userId: string; status: PresenceStatus; lastSeenAt: string | null }
+
+export async function apiPresence(userIds: string[]) {
+  const q = userIds.map((x) => x.trim()).filter(Boolean).slice(0, 200)
+  return apiFetch<{ presence: PresenceEntry[] }>(`/api/presence?userIds=${encodeURIComponent(q.join(','))}`)
+}
+
 export type AdminOverview = { users: number; servers: number; messages: number; dmMessages: number }
 export type AdminUser = { id: string; username: string; createdAt: string; updatedAt: string }
 export type AdminServer = { id: string; name: string; createdAt: string; owner: { id: string; username: string } }
