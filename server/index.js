@@ -136,7 +136,7 @@ io.on('connection', (socket) => {
 
   socket.on('chat:send', async (payload) => {
     try {
-      const { channelId, content } = payload || {}
+      const { channelId, content, replyToId } = payload || {}
       if (!channelId || typeof content !== 'string' || !content.trim()) return
 
       const userId = socket.data.userId
@@ -162,20 +162,93 @@ io.on('connection', (socket) => {
         return
       }
 
+      let replyTo = null
+      if (typeof replyToId === 'string' && replyToId) {
+        replyTo = await prisma.message.findUnique({
+          where: { id: replyToId },
+          select: {
+            id: true,
+            channelId: true,
+            content: true,
+            author: { select: { id: true, username: true } },
+          },
+        })
+        if (!replyTo || replyTo.channelId !== channelId) {
+          socket.emit('chat:error', { message: 'Invalid reply target' })
+          return
+        }
+      }
+
       const message = await prisma.message.create({
         data: {
           channelId,
           authorId: userId,
           content: content.trim(),
+          replyToId: replyTo?.id || null,
         },
         include: {
           author: { select: { id: true, username: true } },
+          replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+          reactions: { select: { emoji: true, userId: true } },
         },
       })
 
-      io.to(`channel:${channelId}`).emit('chat:message', message)
+      const reactionSummary = summarizeReactions(message.reactions, userId)
+      io.to(`channel:${channelId}`).emit('chat:message', { ...message, reactions: reactionSummary })
     } catch {
       socket.emit('chat:error', { message: 'Failed to send message' })
+    }
+  })
+
+  socket.on('chat:react', async (payload) => {
+    try {
+      const { messageId, emoji } = payload || {}
+      if (!messageId || typeof emoji !== 'string' || !emoji.trim()) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true } })
+      if (!msg) return
+
+      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+      if (!channel) return
+
+      const membership = await prisma.membership.findUnique({
+        where: { userId_serverId: { userId, serverId: channel.serverId } },
+        select: { id: true },
+      })
+      if (!membership) {
+        socket.emit('chat:error', { message: 'Not a member' })
+        return
+      }
+
+      const cleanEmoji = emoji.trim().slice(0, 32)
+
+      const existing = await prisma.messageReaction.findUnique({
+        where: { messageId_userId_emoji: { messageId, userId, emoji: cleanEmoji } },
+        select: { id: true },
+      })
+
+      const added = !existing
+
+      if (existing) {
+        await prisma.messageReaction.delete({ where: { id: existing.id } })
+      } else {
+        await prisma.messageReaction.create({ data: { messageId, userId, emoji: cleanEmoji } })
+      }
+
+      io.to(`channel:${msg.channelId}`).emit('chat:reaction', {
+        messageId,
+        emoji: cleanEmoji,
+        userId,
+        added,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to react' })
     }
   })
 
@@ -208,7 +281,7 @@ io.on('connection', (socket) => {
 
   socket.on('dm:send', async (payload) => {
     try {
-      const { threadId, content } = payload || {}
+      const { threadId, content, replyToId } = payload || {}
       if (!threadId || typeof content !== 'string' || !content.trim()) return
 
       const userId = socket.data.userId
@@ -227,17 +300,99 @@ io.on('connection', (socket) => {
         return
       }
 
+      let replyTo = null
+      if (typeof replyToId === 'string' && replyToId) {
+        replyTo = await prisma.dmMessage.findUnique({
+          where: { id: replyToId },
+          select: {
+            id: true,
+            threadId: true,
+            content: true,
+            author: { select: { id: true, username: true } },
+          },
+        })
+        if (!replyTo || replyTo.threadId !== threadId) {
+          socket.emit('chat:error', { message: 'Invalid reply target' })
+          return
+        }
+      }
+
       const message = await prisma.dmMessage.create({
-        data: { threadId, authorId: userId, content: content.trim() },
-        include: { author: { select: { id: true, username: true } } },
+        data: { threadId, authorId: userId, content: content.trim(), replyToId: replyTo?.id || null },
+        include: {
+          author: { select: { id: true, username: true } },
+          replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+          reactions: { select: { emoji: true, userId: true } },
+        },
       })
 
-      io.to(`dm:${threadId}`).emit('dm:message', { ...message, threadId })
+      const reactionSummary = summarizeReactions(message.reactions, userId)
+      io.to(`dm:${threadId}`).emit('dm:message', { ...message, threadId, reactions: reactionSummary })
     } catch {
       socket.emit('chat:error', { message: 'Failed to send dm' })
     }
   })
+
+  socket.on('dm:react', async (payload) => {
+    try {
+      const { messageId, emoji } = payload || {}
+      if (!messageId || typeof emoji !== 'string' || !emoji.trim()) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true } })
+      if (!msg) return
+
+      const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      const cleanEmoji = emoji.trim().slice(0, 32)
+
+      const existing = await prisma.dmMessageReaction.findUnique({
+        where: { messageId_userId_emoji: { messageId, userId, emoji: cleanEmoji } },
+        select: { id: true },
+      })
+
+      const added = !existing
+
+      if (existing) {
+        await prisma.dmMessageReaction.delete({ where: { id: existing.id } })
+      } else {
+        await prisma.dmMessageReaction.create({ data: { messageId, userId, emoji: cleanEmoji } })
+      }
+
+      io.to(`dm:${msg.threadId}`).emit('dm:reaction', {
+        threadId: msg.threadId,
+        messageId,
+        emoji: cleanEmoji,
+        userId,
+        added,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to react' })
+    }
+  })
 })
+
+function summarizeReactions(reactions, viewerUserId) {
+  const byEmoji = new Map()
+  for (const r of reactions || []) {
+    const key = r.emoji
+    if (!byEmoji.has(key)) byEmoji.set(key, { emoji: key, count: 0, viewerHasReacted: false })
+    const entry = byEmoji.get(key)
+    entry.count += 1
+    if (viewerUserId && r.userId === viewerUserId) entry.viewerHasReacted = true
+  }
+  return Array.from(byEmoji.values()).sort((a, b) => b.count - a.count)
+}
 
 function requireAuth(req, res, next) {
   if (!req.session?.userId) return res.status(401).json({ ok: false, error: 'unauthorized' })
@@ -528,12 +683,20 @@ app.get('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
 
   const messages = await prisma.dmMessage.findMany({
     where: { threadId },
-    include: { author: { select: { id: true, username: true } } },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
     orderBy: { createdAt: 'desc' },
     take: limit,
   })
 
-  res.json({ ok: true, messages: messages.reverse() })
+  const out = messages
+    .reverse()
+    .map((m) => ({ ...m, reactions: summarizeReactions(m.reactions, userId) }))
+
+  res.json({ ok: true, messages: out })
 })
 
 app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
@@ -542,6 +705,7 @@ app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   const parsed = z
     .object({
       content: z.string().min(1).max(2000),
+      replyToId: z.string().min(1).optional(),
     })
     .safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
@@ -550,12 +714,23 @@ app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
   if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
 
+  let replyToId = null
+  if (parsed.data.replyToId) {
+    const replyTo = await prisma.dmMessage.findUnique({ where: { id: parsed.data.replyToId }, select: { id: true, threadId: true } })
+    if (!replyTo || replyTo.threadId !== threadId) return res.status(400).json({ ok: false, error: 'invalid_reply' })
+    replyToId = replyTo.id
+  }
+
   const message = await prisma.dmMessage.create({
-    data: { threadId, authorId: userId, content: parsed.data.content.trim() },
-    include: { author: { select: { id: true, username: true } } },
+    data: { threadId, authorId: userId, content: parsed.data.content.trim(), replyToId },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
   })
 
-  res.json({ ok: true, message })
+  res.json({ ok: true, message: { ...message, reactions: summarizeReactions(message.reactions, userId) } })
 })
 
 app.get('/api/servers', requireAuth, async (req, res) => {
@@ -767,12 +942,20 @@ app.get('/api/channels/:channelId/messages', requireAuth, async (req, res) => {
 
   const messages = await prisma.message.findMany({
     where: { channelId },
-    include: { author: { select: { id: true, username: true } } },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
     orderBy: { createdAt: 'desc' },
     take: limit,
   })
 
-  res.json({ ok: true, messages: messages.reverse() })
+  const out = messages
+    .reverse()
+    .map((m) => ({ ...m, reactions: summarizeReactions(m.reactions, userId) }))
+
+  res.json({ ok: true, messages: out })
 })
 
 if (isProd) {

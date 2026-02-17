@@ -47,6 +47,9 @@ model User {
   dmThreadsA DmThread[] @relation("DmThreadA")
   dmThreadsB DmThread[] @relation("DmThreadB")
   dmMessages DmMessage[]
+
+  messageReactions   MessageReaction[]
+  dmMessageReactions DmMessageReaction[]
 }
 
 model Server {
@@ -117,13 +120,35 @@ model Message {
 
   content   String
 
+  replyToId String?
+  replyTo   Message? @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies   Message[] @relation("MessageReplies")
+
   channelId String
   channel   Channel  @relation(fields: [channelId], references: [id])
 
   authorId  String
   author    User     @relation(fields: [authorId], references: [id])
 
+  reactions MessageReaction[]
+
   @@index([channelId, createdAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  emoji     String
+
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id])
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId, createdAt])
 }
 
 model FriendRequest {
@@ -176,11 +201,33 @@ model DmMessage {
   createdAt DateTime @default(now())
   content   String
 
+  replyToId String?
+  replyTo   DmMessage? @relation("DmMessageReplies", fields: [replyToId], references: [id])
+  replies   DmMessage[] @relation("DmMessageReplies")
+
   threadId String
   thread   DmThread @relation(fields: [threadId], references: [id])
 
   authorId String
   author   User @relation(fields: [authorId], references: [id])
 
+  reactions DmMessageReaction[]
+
   @@index([threadId, createdAt])
+}
+
+model DmMessageReaction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  emoji     String
+
+  messageId String
+  message   DmMessage @relation(fields: [messageId], references: [id])
+
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId, createdAt])
 }

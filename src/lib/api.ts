@@ -29,11 +29,16 @@ export type User = { id: string; username: string }
 export type Server = { id: string; name: string }
 export type Channel = { id: string; name: string; type: string }
 export type Member = { id: string; username: string; role: string }
+
+export type ReactionSummary = { emoji: string; count: number; viewerHasReacted: boolean }
+
 export type Message = {
   id: string
   content: string
   createdAt: string
   author: { id: string; username: string }
+  replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
+  reactions?: ReactionSummary[]
 }
 
 export type FriendUser = { id: string; username: string }
@@ -59,6 +64,8 @@ export type DmMessage = {
   content: string
   createdAt: string
   author: { id: string; username: string }
+  replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
+  reactions?: ReactionSummary[]
 }
 
 export async function apiMe() {

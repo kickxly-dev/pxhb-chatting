@@ -55,6 +55,7 @@ import {
   type FriendRequest,
   type Member as ApiMember,
   type Message as ApiMessage,
+  type ReactionSummary,
   type Server,
   type User,
 } from '@/lib/api'
@@ -70,6 +71,7 @@ function App() {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ApiMessage[]>([])
   const [messageText, setMessageText] = useState('')
+  const [replyingTo, setReplyingTo] = useState<{ id: string; who: string; preview: string } | null>(null)
 
   const [members, setMembers] = useState<ApiMember[]>([])
 
@@ -198,6 +200,26 @@ function App() {
     } catch {
       setDmMessages([])
     }
+  }
+
+  function applyReactionDelta(prev: ReactionSummary[] | undefined, emoji: string, added: boolean, viewerUserId: string | null, deltaUserId: string) {
+    const list = prev ? [...prev] : []
+    const idx = list.findIndex((r) => r.emoji === emoji)
+    const viewer = viewerUserId && viewerUserId === deltaUserId
+    if (idx === -1) {
+      if (!added) return list
+      return [...list, { emoji, count: 1, viewerHasReacted: !!viewer }]
+    }
+
+    const cur = list[idx]
+    const nextCount = Math.max(0, cur.count + (added ? 1 : -1))
+    const nextViewer = viewer ? added : cur.viewerHasReacted
+    if (nextCount === 0) {
+      list.splice(idx, 1)
+      return list
+    }
+    list[idx] = { ...cur, count: nextCount, viewerHasReacted: nextViewer }
+    return list
   }
 
   async function refreshFriendsData() {
@@ -336,6 +358,7 @@ function App() {
       setDmThreads([])
       setSelectedDmThreadId(null)
       setDmUnread({})
+      setReplyingTo(null)
       return
     }
 
@@ -436,6 +459,17 @@ function App() {
       })
     })
 
+    s.on('chat:reaction', (payload: { messageId: string; emoji: string; userId: string; added: boolean }) => {
+      const viewerUserId = user?.id || null
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== payload.messageId) return m
+          const reactions = applyReactionDelta(m.reactions, payload.emoji, payload.added, viewerUserId, payload.userId)
+          return { ...m, reactions }
+        }),
+      )
+    })
+
     s.on('dm:message', (msg: DmMessage) => {
       setDmMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev
@@ -458,6 +492,17 @@ function App() {
       if (!isActive) {
         setDmUnread((prev) => ({ ...prev, [msg.threadId]: (prev[msg.threadId] || 0) + 1 }))
       }
+    })
+
+    s.on('dm:reaction', (payload: { threadId: string; messageId: string; emoji: string; userId: string; added: boolean }) => {
+      const viewerUserId = user?.id || null
+      setDmMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== payload.messageId) return m
+          const reactions = applyReactionDelta(m.reactions, payload.emoji, payload.added, viewerUserId, payload.userId)
+          return { ...m, reactions }
+        }),
+      )
     })
 
     s.on('chat:error', (payload: unknown) => {
@@ -516,17 +561,40 @@ function App() {
       return
     }
 
+    const replyToId = replyingTo?.id || undefined
+
     if (navMode === 'server') {
       if (!selectedChannelId) return
-      socketRef.current.emit('chat:send', { channelId: selectedChannelId, content })
+      socketRef.current.emit('chat:send', { channelId: selectedChannelId, content, replyToId })
       setMessageText('')
+      setReplyingTo(null)
       return
     }
 
     if (navMode === 'home') {
       if (!selectedDmThreadId) return
-      socketRef.current.emit('dm:send', { threadId: selectedDmThreadId, content })
+      socketRef.current.emit('dm:send', { threadId: selectedDmThreadId, content, replyToId })
       setMessageText('')
+      setReplyingTo(null)
+    }
+  }
+
+  function onToggleReaction(messageId: string, emoji: string) {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+    if (!socketConnected || !socketRef.current) {
+      setSocketError('socket_not_connected')
+      return
+    }
+    if (navMode === 'server') {
+      socketRef.current.emit('chat:react', { messageId, emoji })
+      return
+    }
+    if (navMode === 'home') {
+      socketRef.current.emit('dm:react', { messageId, emoji })
     }
   }
 
@@ -1012,7 +1080,12 @@ function App() {
                           tone={m.author.id === user?.id ? 'me' : 'bot'}
                           createdAt={m.createdAt}
                           showHeader={showHeader}
-                          onReply={(who) => setMessageText((prevText) => (prevText ? prevText : `@${who} `))}
+                          replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
+                          reactions={m.reactions}
+                          onReact={(emoji) => onToggleReaction(m.id, emoji)}
+                          onReply={() => {
+                            setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
+                          }}
                         />
                       )
                     })
@@ -1028,7 +1101,12 @@ function App() {
                           tone={m.author.id === user?.id ? 'me' : 'bot'}
                           createdAt={m.createdAt}
                           showHeader={showHeader}
-                          onReply={(who) => setMessageText((prevText) => (prevText ? prevText : `@${who} `))}
+                          replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
+                          reactions={m.reactions}
+                          onReact={(emoji) => onToggleReaction(m.id, emoji)}
+                          onReply={() => {
+                            setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
+                          }}
                         />
                       )
                     })}
@@ -1037,7 +1115,27 @@ function App() {
           </ScrollArea>
 
           <footer className="border-t border-white/10 p-3">
-            <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+            <div className="mx-auto flex max-w-3xl flex-col gap-2">
+              {replyingTo ? (
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-extrabold text-px-text2">
+                      Replying to <span className="text-px-text">{replyingTo.who}</span>
+                    </div>
+                    <div className="truncate text-xs text-px-text2">{replyingTo.preview}</div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-8 w-8 rounded-xl bg-white/5 text-px-text2 hover:bg-white/10"
+                    onClick={() => setReplyingTo(null)}
+                  >
+                    ×
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
               <Button variant="secondary" size="icon" className="h-9 w-9 rounded-xl bg-white/5 text-px-text2 hover:bg-white/10">
                 +
               </Button>
@@ -1066,6 +1164,7 @@ function App() {
               >
                 Send
               </Button>
+            </div>
             </div>
           </footer>
         </main>
@@ -1555,6 +1654,9 @@ function Message({
   createdAt,
   showHeader = true,
   onReply,
+  replyPreview,
+  reactions,
+  onReact,
 }: {
   who: string
   text: string
@@ -1562,6 +1664,9 @@ function Message({
   createdAt?: string
   showHeader?: boolean
   onReply?: (who: string) => void
+  replyPreview?: { who: string; text: string } | null
+  reactions?: ReactionSummary[]
+  onReact?: (emoji: string) => void
 }) {
   const time = useMemo(() => {
     if (!createdAt) return 'just now'
@@ -1610,7 +1715,33 @@ function Message({
               <div className="text-xs text-px-text2">{time}</div>
             </div>
           ) : null}
+          {replyPreview ? (
+            <div className={showHeader ? 'mt-0.5 flex items-center gap-2 text-xs text-px-text2' : 'flex items-center gap-2 text-xs text-px-text2'}>
+              <span className="font-extrabold text-px-text">{replyPreview.who}</span>
+              <span className="truncate">{replyPreview.text}</span>
+            </div>
+          ) : null}
           <div className={showHeader ? 'mt-0.5 text-sm leading-relaxed text-px-text' : 'text-sm leading-relaxed text-px-text'}>{text}</div>
+
+          {reactions && reactions.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {reactions.map((r) => (
+                <button
+                  key={r.emoji}
+                  type="button"
+                  className={
+                    r.viewerHasReacted
+                      ? 'flex items-center gap-1 rounded-full border border-white/10 bg-px-brand/20 px-2 py-1 text-xs font-extrabold text-white'
+                      : 'flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs font-extrabold text-px-text2 hover:bg-white/10'
+                  }
+                  onClick={() => onReact?.(r.emoji)}
+                >
+                  <span>{r.emoji}</span>
+                  <span>{r.count}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1634,7 +1765,8 @@ function Message({
         <button
           type="button"
           className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
-          title="React (placeholder)"
+          onClick={() => onReact?.('👍')}
+          title="React 👍"
         >
           <SmilePlus className="h-4 w-4" />
         </button>
