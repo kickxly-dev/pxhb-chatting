@@ -97,6 +97,7 @@ app.use(async (req, res, next) => {
       path === '/api/site' ||
       path.startsWith('/api/auth') ||
       path.startsWith('/api/admin/login') ||
+      path.startsWith('/api/admin/unlock') ||
       path.startsWith('/api/admin/me')
     ) {
       return next()
