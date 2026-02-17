@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Hash, MessageCircle, Plus, Settings, Users } from 'lucide-react'
+import { Copy, Hash, MessageCircle, MoreHorizontal, Plus, Reply, Settings, SmilePlus, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -1012,6 +1012,7 @@ function App() {
                           tone={m.author.id === user?.id ? 'me' : 'bot'}
                           createdAt={m.createdAt}
                           showHeader={showHeader}
+                          onReply={(who) => setMessageText((prevText) => (prevText ? prevText : `@${who} `))}
                         />
                       )
                     })
@@ -1027,6 +1028,7 @@ function App() {
                           tone={m.author.id === user?.id ? 'me' : 'bot'}
                           createdAt={m.createdAt}
                           showHeader={showHeader}
+                          onReply={(who) => setMessageText((prevText) => (prevText ? prevText : `@${who} `))}
                         />
                       )
                     })}
@@ -1552,20 +1554,15 @@ function Message({
   tone,
   createdAt,
   showHeader = true,
+  onReply,
 }: {
   who: string
   text: string
   tone: 'system' | 'bot' | 'me'
   createdAt?: string
   showHeader?: boolean
+  onReply?: (who: string) => void
 }) {
-  const pill =
-    tone === 'system'
-      ? 'bg-white/10 text-px-text2'
-      : tone === 'bot'
-        ? 'bg-px-brand/20 text-px-text'
-        : 'bg-emerald-500/15 text-px-text'
-
   const time = useMemo(() => {
     if (!createdAt) return 'just now'
     const d = new Date(createdAt)
@@ -1573,15 +1570,82 @@ function Message({
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }, [createdAt])
 
+  const initial = who.slice(0, 1).toUpperCase()
+
+  if (tone === 'system') {
+    return (
+      <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-px-text2">
+        {text}
+      </div>
+    )
+  }
+
+  const nameColor = tone === 'me' ? 'text-emerald-300' : 'text-px-text'
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // ignore
+    }
+  }
+
   return (
-    <div className={showHeader ? 'rounded-2xl border border-white/10 bg-white/5 p-3' : 'rounded-2xl border border-white/10 bg-white/5 px-3 py-2'}>
-      {showHeader ? (
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2 py-1 text-xs font-extrabold ${pill}`}>{who}</span>
-          <span className="text-xs text-px-text2">{time}</span>
+    <div className={showHeader ? 'group relative -mx-2 rounded-lg px-2 py-2 hover:bg-white/5' : 'group relative -mx-2 rounded-lg px-2 py-1 hover:bg-white/5'}>
+      <div className="flex gap-3">
+        <div className="w-10 shrink-0">
+          {showHeader ? (
+            <Avatar className="h-10 w-10">
+              <AvatarFallback>{initial}</AvatarFallback>
+            </Avatar>
+          ) : (
+            <div className="h-10 w-10" />
+          )}
         </div>
-      ) : null}
-      <div className={showHeader ? 'mt-2 text-sm leading-relaxed text-px-text' : 'text-sm leading-relaxed text-px-text'}>{text}</div>
+
+        <div className="min-w-0 flex-1">
+          {showHeader ? (
+            <div className="flex items-baseline gap-2">
+              <div className={`truncate text-sm font-extrabold ${nameColor}`}>{who}</div>
+              <div className="text-xs text-px-text2">{time}</div>
+            </div>
+          ) : null}
+          <div className={showHeader ? 'mt-0.5 text-sm leading-relaxed text-px-text' : 'text-sm leading-relaxed text-px-text'}>{text}</div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute right-2 top-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+        <button
+          type="button"
+          className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
+          onClick={onCopy}
+          title="Copy"
+        >
+          <Copy className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
+          onClick={() => onReply?.(who)}
+          title="Reply (placeholder)"
+        >
+          <Reply className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
+          title="React (placeholder)"
+        >
+          <SmilePlus className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
+          title="More"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }
