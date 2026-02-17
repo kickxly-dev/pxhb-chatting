@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Plus, Reply, Settings, SmilePlus, Trash2, Users } from 'lucide-react'
+import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, SmilePlus, Trash2, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -40,9 +40,15 @@ import {
   apiDeleteMessage,
   apiEditDmMessage,
   apiEditMessage,
+  apiListChannelPins,
   apiListFriends,
   apiListFriendRequests,
+  apiListDmPins,
   apiListDmThreads,
+  apiPinDmMessage,
+  apiPinMessage,
+  apiUnpinDmMessage,
+  apiUnpinMessage,
   apiJoinInvite,
   apiListChannels,
   apiListMembers,
@@ -124,6 +130,11 @@ function App() {
   const [adminServers, setAdminServers] = useState<AdminServer[]>([])
   const [adminAudit, setAdminAudit] = useState<AdminAuditLog[]>([])
 
+  const [pinsOpen, setPinsOpen] = useState(false)
+  const [pinsBusy, setPinsBusy] = useState(false)
+  const [pinsError, setPinsError] = useState<string | null>(null)
+  const [pins, setPins] = useState<(ApiMessage | DmMessage)[]>([])
+
   const [createServerOpen, setCreateServerOpen] = useState(false)
   const [newServerName, setNewServerName] = useState('')
   const [createServerBusy, setCreateServerBusy] = useState(false)
@@ -187,6 +198,61 @@ function App() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   }, [])
+
+  async function onTogglePin(messageId: string, pinned: boolean) {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+
+    try {
+      if (navMode === 'server') {
+        if (socketConnected && socketRef.current) {
+          socketRef.current.emit(pinned ? 'chat:unpin' : 'chat:pin', { messageId })
+        } else {
+          if (pinned) await apiUnpinMessage(messageId)
+          else await apiPinMessage(messageId)
+          const res = await apiListMessages(selectedChannelId || '', 75)
+          setMessages(res.messages)
+        }
+      }
+      if (navMode === 'home') {
+        if (socketConnected && socketRef.current) {
+          socketRef.current.emit(pinned ? 'dm:unpin' : 'dm:pin', { messageId })
+        } else {
+          if (pinned) await apiUnpinDmMessage(messageId)
+          else await apiPinDmMessage(messageId)
+          const res = await apiListDmMessages(selectedDmThreadId || '', 100)
+          setDmMessages(res.messages)
+        }
+      }
+    } catch (e) {
+      pushToast('Pins', e instanceof Error ? e.message : 'pin_failed', 'error')
+    }
+  }
+
+  async function refreshPins() {
+    if (!user) return
+    setPinsBusy(true)
+    setPinsError(null)
+    try {
+      if (navMode === 'server') {
+        if (!selectedChannelId) throw new Error('no_channel')
+        const res = await apiListChannelPins(selectedChannelId, 100)
+        setPins(res.pins)
+      } else {
+        if (!selectedDmThreadId) throw new Error('no_dm')
+        const res = await apiListDmPins(selectedDmThreadId, 100)
+        setPins(res.pins)
+      }
+    } catch (e) {
+      setPins([])
+      setPinsError(e instanceof Error ? e.message : 'pins_failed')
+    } finally {
+      setPinsBusy(false)
+    }
+  }
 
   async function onBeginEdit(messageId: string, current: string) {
     setEditingMessageId(messageId)
@@ -691,6 +757,14 @@ function App() {
       setMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, content: '', deletedAt: payload.deletedAt } : m)))
     })
 
+    s.on('chat:pinned', (payload: { messageId: string; pinnedAt: string | null; pinnedById: string | null }) => {
+      setMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, pinnedAt: payload.pinnedAt, pinnedById: payload.pinnedById } : m)))
+    })
+
+    s.on('chat:unpinned', (payload: { messageId: string }) => {
+      setMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, pinnedAt: null, pinnedById: null } : m)))
+    })
+
     s.on('dm:message', (msg: DmMessage) => {
       setDmMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev
@@ -734,6 +808,14 @@ function App() {
 
     s.on('dm:deleted', (payload: { threadId: string; messageId: string; deletedAt: string | null }) => {
       setDmMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, content: '', deletedAt: payload.deletedAt } : m)))
+    })
+
+    s.on('dm:pinned', (payload: { threadId: string; messageId: string; pinnedAt: string | null; pinnedById: string | null }) => {
+      setDmMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, pinnedAt: payload.pinnedAt, pinnedById: payload.pinnedById } : m)))
+    })
+
+    s.on('dm:unpinned', (payload: { threadId: string; messageId: string }) => {
+      setDmMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, pinnedAt: null, pinnedById: null } : m)))
     })
 
     s.on('chat:error', (payload: unknown) => {
@@ -1311,6 +1393,17 @@ function App() {
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
                 onClick={() => {
+                  setPinsOpen(true)
+                  if (user) refreshPins()
+                }}
+                disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
+              >
+                Pins
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
                   setAdminOpen(true)
                   setAdminError(null)
                   if (user && adminAuthed) refreshAdminData()
@@ -1443,6 +1536,9 @@ function App() {
                               reactions={m.reactions}
                               editedAt={m.editedAt}
                               deletedAt={m.deletedAt}
+                              canPin={!isDeleted}
+                              isPinned={!!m.pinnedAt}
+                              onTogglePin={() => onTogglePin(m.id, !!m.pinnedAt)}
                               canEdit={isMine && !isDeleted}
                               canDelete={isMine && !isDeleted}
                               onEdit={() => onBeginEdit(m.id, m.content)}
@@ -1495,6 +1591,9 @@ function App() {
                               reactions={m.reactions}
                               editedAt={m.editedAt}
                               deletedAt={m.deletedAt}
+                              canPin={!isDeleted}
+                              isPinned={!!m.pinnedAt}
+                              onTogglePin={() => onTogglePin(m.id, !!m.pinnedAt)}
                               canEdit={isMine && !isDeleted}
                               canDelete={isMine && !isDeleted}
                               onEdit={() => onBeginEdit(m.id, m.content)}
@@ -1601,6 +1700,34 @@ function App() {
           </aside>
         )}
       </div>
+
+      <Dialog
+        open={pinsOpen}
+        onOpenChange={(o) => {
+          setPinsOpen(o)
+          if (o && user) refreshPins()
+        }}
+      >
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Pinned Messages</DialogTitle>
+            <DialogDescription>{navMode === 'server' ? 'This channel' : 'This DM'} • Protected by Equinox V1</DialogDescription>
+          </DialogHeader>
+
+          {pinsError ? <div className="text-sm text-red-400">{pinsError}</div> : null}
+          {pinsBusy ? <div className="text-sm text-px-text2">Loading…</div> : null}
+          {!pinsBusy && !pins.length ? <div className="text-sm text-px-text2">No pinned messages.</div> : null}
+
+          <div className="space-y-2">
+            {pins.map((m) => (
+              <div key={m.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className="text-sm font-bold">{m.author.username}</div>
+                <div className="mt-1 text-sm text-px-text">{m.deletedAt ? 'Message deleted' : m.content}</div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={adminOpen}
@@ -2165,6 +2292,9 @@ function Message({
   replyPreview,
   reactions,
   onReact,
+  canPin,
+  isPinned,
+  onTogglePin,
   canEdit,
   canDelete,
   onEdit,
@@ -2181,6 +2311,9 @@ function Message({
   replyPreview?: { who: string; text: string } | null
   reactions?: ReactionSummary[]
   onReact?: (emoji: string) => void
+  canPin?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
   canEdit?: boolean
   canDelete?: boolean
   onEdit?: () => void
@@ -2292,6 +2425,20 @@ function Message({
             title="Delete"
           >
             <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
+        {canPin ? (
+          <button
+            type="button"
+            className={
+              isPinned
+                ? 'grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-brand/20 text-white hover:bg-px-brand/30'
+                : 'grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10'
+            }
+            onClick={onTogglePin}
+            title={isPinned ? 'Unpin' : 'Pin'}
+          >
+            <Pin className="h-4 w-4" />
           </button>
         ) : null}
         <button

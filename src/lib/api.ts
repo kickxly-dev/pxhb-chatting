@@ -38,6 +38,8 @@ export type Message = {
   createdAt: string
   editedAt?: string | null
   deletedAt?: string | null
+  pinnedAt?: string | null
+  pinnedById?: string | null
   author: { id: string; username: string }
   replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
   reactions?: ReactionSummary[]
@@ -67,6 +69,8 @@ export type DmMessage = {
   createdAt: string
   editedAt?: string | null
   deletedAt?: string | null
+  pinnedAt?: string | null
+  pinnedById?: string | null
   author: { id: string; username: string }
   replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
   reactions?: ReactionSummary[]
@@ -157,6 +161,18 @@ export async function apiDeleteMessage(messageId: string) {
   return apiFetch<{ message: Message }>(`/api/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' })
 }
 
+export async function apiListChannelPins(channelId: string, limit = 50) {
+  return apiFetch<{ pins: Message[] }>(`/api/channels/${encodeURIComponent(channelId)}/pins?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiPinMessage(messageId: string) {
+  return apiFetch<{ message: Message }>(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: 'POST' })
+}
+
+export async function apiUnpinMessage(messageId: string) {
+  return apiFetch<{ message: Message }>(`/api/messages/${encodeURIComponent(messageId)}/unpin`, { method: 'POST' })
+}
+
 export async function apiSendFriendRequest(username: string) {
   return apiFetch<{ request: FriendRequest }>('/api/friends/requests', {
     method: 'POST',
@@ -215,6 +231,18 @@ export async function apiEditDmMessage(messageId: string, content: string) {
 
 export async function apiDeleteDmMessage(messageId: string) {
   return apiFetch<{ message: DmMessage }>(`/api/dm-messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' })
+}
+
+export async function apiListDmPins(threadId: string, limit = 50) {
+  return apiFetch<{ pins: DmMessage[] }>(`/api/dms/${encodeURIComponent(threadId)}/pins?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiPinDmMessage(messageId: string) {
+  return apiFetch<{ message: DmMessage }>(`/api/dm-messages/${encodeURIComponent(messageId)}/pin`, { method: 'POST' })
+}
+
+export async function apiUnpinDmMessage(messageId: string) {
+  return apiFetch<{ message: DmMessage }>(`/api/dm-messages/${encodeURIComponent(messageId)}/unpin`, { method: 'POST' })
 }
 
 export type AdminOverview = { users: number; servers: number; messages: number; dmMessages: number }

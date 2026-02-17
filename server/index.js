@@ -135,6 +135,80 @@ io.on('connection', (socket) => {
     }
   })
 
+  socket.on('chat:pin', async (payload) => {
+    try {
+      const { messageId } = payload || {}
+      if (!messageId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true } })
+      if (!msg) return
+
+      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+      if (!channel) return
+
+      const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+      if (!membership) {
+        socket.emit('chat:error', { message: 'Not a member' })
+        return
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: messageId },
+        data: { pinnedAt: new Date(), pinnedById: userId },
+        select: { id: true, channelId: true, pinnedAt: true, pinnedById: true },
+      })
+
+      io.to(`channel:${updated.channelId}`).emit('chat:pinned', {
+        messageId: updated.id,
+        pinnedAt: updated.pinnedAt,
+        pinnedById: updated.pinnedById,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to pin' })
+    }
+  })
+
+  socket.on('chat:unpin', async (payload) => {
+    try {
+      const { messageId } = payload || {}
+      if (!messageId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true } })
+      if (!msg) return
+
+      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+      if (!channel) return
+
+      const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+      if (!membership) {
+        socket.emit('chat:error', { message: 'Not a member' })
+        return
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: messageId },
+        data: { pinnedAt: null, pinnedById: null },
+        select: { id: true, channelId: true },
+      })
+
+      io.to(`channel:${updated.channelId}`).emit('chat:unpinned', { messageId: updated.id })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to unpin' })
+    }
+  })
+
   socket.on('chat:edit', async (payload) => {
     try {
       const { messageId, content } = payload || {}
@@ -555,6 +629,77 @@ io.on('connection', (socket) => {
       })
     } catch {
       socket.emit('chat:error', { message: 'Failed to delete dm' })
+    }
+  })
+
+  socket.on('dm:pin', async (payload) => {
+    try {
+      const { messageId } = payload || {}
+      if (!messageId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true } })
+      if (!msg) return
+
+      const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      const updated = await prisma.dmMessage.update({
+        where: { id: messageId },
+        data: { pinnedAt: new Date(), pinnedById: userId },
+        select: { id: true, threadId: true, pinnedAt: true, pinnedById: true },
+      })
+
+      io.to(`dm:${updated.threadId}`).emit('dm:pinned', {
+        threadId: updated.threadId,
+        messageId: updated.id,
+        pinnedAt: updated.pinnedAt,
+        pinnedById: updated.pinnedById,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to pin dm' })
+    }
+  })
+
+  socket.on('dm:unpin', async (payload) => {
+    try {
+      const { messageId } = payload || {}
+      if (!messageId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true } })
+      if (!msg) return
+
+      const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      const updated = await prisma.dmMessage.update({
+        where: { id: messageId },
+        data: { pinnedAt: null, pinnedById: null },
+        select: { id: true, threadId: true },
+      })
+
+      io.to(`dm:${updated.threadId}`).emit('dm:unpinned', { threadId: updated.threadId, messageId: updated.id })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to unpin dm' })
     }
   })
 })
@@ -1024,6 +1169,114 @@ app.patch('/api/messages/:messageId', requireAuth, async (req, res) => {
   })
 
   res.json({ ok: true, message: { ...updated, reactions: summarizeReactions(updated.reactions, userId) } })
+})
+
+app.get('/api/channels/:channelId/pins', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { channelId } = req.params
+  const limit = Math.min(Number(req.query.limit || 50) || 50, 200)
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const pins = await prisma.message.findMany({
+    where: { channelId, pinnedAt: { not: null } },
+    orderBy: { pinnedAt: 'desc' },
+    take: limit,
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, pins: pins.map((m) => ({ ...m, reactions: summarizeReactions(m.reactions, userId) })) })
+})
+
+app.post('/api/messages/:messageId/pin', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+  const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.message.update({ where: { id: messageId }, data: { pinnedAt: new Date(), pinnedById: userId } })
+  res.json({ ok: true, message: updated })
+})
+
+app.post('/api/messages/:messageId/unpin', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+  const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.message.update({ where: { id: messageId }, data: { pinnedAt: null, pinnedById: null } })
+  res.json({ ok: true, message: updated })
+})
+
+app.get('/api/dms/:threadId/pins', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { threadId } = req.params
+  const limit = Math.min(Number(req.query.limit || 50) || 50, 200)
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const pins = await prisma.dmMessage.findMany({
+    where: { threadId, pinnedAt: { not: null } },
+    orderBy: { pinnedAt: 'desc' },
+    take: limit,
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, pins: pins.map((m) => ({ ...m, threadId, reactions: summarizeReactions(m.reactions, userId) })) })
+})
+
+app.post('/api/dm-messages/:messageId/pin', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+  const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.dmMessage.update({ where: { id: messageId }, data: { pinnedAt: new Date(), pinnedById: userId } })
+  res.json({ ok: true, message: updated })
+})
+
+app.post('/api/dm-messages/:messageId/unpin', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+  const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.dmMessage.update({ where: { id: messageId }, data: { pinnedAt: null, pinnedById: null } })
+  res.json({ ok: true, message: updated })
 })
 
 app.delete('/api/messages/:messageId', requireAuth, async (req, res) => {
