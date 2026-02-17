@@ -252,6 +252,18 @@ export async function apiUnpinDmMessage(messageId: string) {
   return apiFetch<{ message: DmMessage }>(`/api/dm-messages/${encodeURIComponent(messageId)}/unpin`, { method: 'POST' })
 }
 
+export async function apiSearchChannel(channelId: string, q: string, limit = 50) {
+  return apiFetch<{ results: Message[] }>(
+    `/api/channels/${encodeURIComponent(channelId)}/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(limit))}`,
+  )
+}
+
+export async function apiSearchDm(threadId: string, q: string, limit = 50) {
+  return apiFetch<{ results: DmMessage[] }>(
+    `/api/dms/${encodeURIComponent(threadId)}/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(limit))}`,
+  )
+}
+
 export type AdminOverview = { users: number; servers: number; messages: number; dmMessages: number }
 export type AdminUser = { id: string; username: string; createdAt: string; updatedAt: string }
 export type AdminServer = { id: string; name: string; createdAt: string; owner: { id: string; username: string } }

@@ -1191,6 +1191,72 @@ app.get('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   res.json({ ok: true, messages: out })
 })
 
+app.get('/api/channels/:channelId/search', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { channelId } = req.params
+  const q = String(req.query.q || '').trim()
+  const limit = Math.min(Number(req.query.limit || 50) || 50, 200)
+  if (!q) return res.json({ ok: true, results: [] })
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const results = await prisma.message.findMany({
+    where: {
+      channelId,
+      deletedAt: null,
+      OR: [
+        { content: { contains: q, mode: 'insensitive' } },
+        { author: { username: { contains: q, mode: 'insensitive' } } },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, results: results.map((m) => ({ ...m, reactions: summarizeReactions(m.reactions, userId) })) })
+})
+
+app.get('/api/dms/:threadId/search', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { threadId } = req.params
+  const q = String(req.query.q || '').trim()
+  const limit = Math.min(Number(req.query.limit || 50) || 50, 200)
+  if (!q) return res.json({ ok: true, results: [] })
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const results = await prisma.dmMessage.findMany({
+    where: {
+      threadId,
+      deletedAt: null,
+      OR: [
+        { content: { contains: q, mode: 'insensitive' } },
+        { author: { username: { contains: q, mode: 'insensitive' } } },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, results: results.map((m) => ({ ...m, threadId, reactions: summarizeReactions(m.reactions, userId) })) })
+})
+
 app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   const userId = req.session.userId
   const { threadId } = req.params

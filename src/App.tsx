@@ -49,6 +49,8 @@ import {
   apiListDmThreads,
   apiPinDmMessage,
   apiPinMessage,
+  apiSearchChannel,
+  apiSearchDm,
   apiUnpinDmMessage,
   apiUnpinMessage,
   apiJoinInvite,
@@ -145,6 +147,12 @@ function App() {
   const [pinsError, setPinsError] = useState<string | null>(null)
   const [pins, setPins] = useState<(ApiMessage | DmMessage)[]>([])
 
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchBusy, setSearchBusy] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searchResults, setSearchResults] = useState<(ApiMessage | DmMessage)[]>([])
+
   const [createServerOpen, setCreateServerOpen] = useState(false)
   const [newServerName, setNewServerName] = useState('')
   const [createServerBusy, setCreateServerBusy] = useState(false)
@@ -208,6 +216,37 @@ function App() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   }, [])
+
+  async function runSearch() {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+    const q = searchQ.trim()
+    if (!q) {
+      setSearchResults([])
+      return
+    }
+    setSearchBusy(true)
+    setSearchError(null)
+    try {
+      if (navMode === 'server') {
+        if (!selectedChannelId) throw new Error('no_channel')
+        const res = await apiSearchChannel(selectedChannelId, q, 100)
+        setSearchResults(res.results)
+      } else {
+        if (!selectedDmThreadId) throw new Error('no_dm')
+        const res = await apiSearchDm(selectedDmThreadId, q, 100)
+        setSearchResults(res.results)
+      }
+    } catch (e) {
+      setSearchResults([])
+      setSearchError(e instanceof Error ? e.message : 'search_failed')
+    } finally {
+      setSearchBusy(false)
+    }
+  }
 
   async function refreshAdminSite() {
     if (!user || !adminAuthed) return
@@ -1501,6 +1540,18 @@ function App() {
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
                 onClick={() => {
+                  setSearchOpen(true)
+                  setSearchError(null)
+                  setSearchResults([])
+                }}
+                disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
+              >
+                Search
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
                   setAdminOpen(true)
                   setAdminError(null)
                   if (user && adminAuthed) {
@@ -1800,6 +1851,56 @@ function App() {
           </aside>
         )}
       </div>
+
+      <Dialog
+        open={searchOpen}
+        onOpenChange={(o) => {
+          setSearchOpen(o)
+          if (!o) {
+            setSearchBusy(false)
+            setSearchError(null)
+            setSearchResults([])
+          }
+        }}
+      >
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Search</DialogTitle>
+            <DialogDescription>{navMode === 'server' ? 'Search this channel' : 'Search this DM'} • Protected by Equinox V1</DialogDescription>
+          </DialogHeader>
+
+          <div className="flex gap-2">
+            <Input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages…" />
+            <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={runSearch} disabled={searchBusy}>
+              Go
+            </Button>
+          </div>
+          {searchError ? <div className="text-sm text-red-400">{searchError}</div> : null}
+          {searchBusy ? <div className="text-sm text-px-text2">Searching…</div> : null}
+          {!searchBusy && !searchError && searchQ.trim() && searchResults.length === 0 ? (
+            <div className="text-sm text-px-text2">No results.</div>
+          ) : null}
+
+          <div className="max-h-[50vh] overflow-auto rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="space-y-2">
+              {searchResults.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left hover:bg-white/10"
+                  onClick={() => setSearchOpen(false)}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="truncate text-sm font-extrabold">{m.author.username}</div>
+                    <div className="shrink-0 text-xs text-px-text2">{new Date(m.createdAt).toLocaleString()}</div>
+                  </div>
+                  <div className="mt-1 truncate text-sm text-px-text2">{m.deletedAt ? 'Message deleted' : m.content}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={pinsOpen}
