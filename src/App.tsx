@@ -1148,6 +1148,70 @@ function App() {
     }
   }
 
+  const authDialog = (
+    <Dialog
+      open={authOpen}
+      onOpenChange={(o) => {
+        setAuthOpen(o)
+        if (!o) {
+          setAuthError(null)
+          setAuthPassword('')
+        }
+      }}
+    >
+      <DialogContent className="border-white/10 bg-px-panel text-px-text">
+        <DialogHeader>
+          <DialogTitle>{authMode === 'login' ? 'Login' : 'Create account'}</DialogTitle>
+          <DialogDescription className="text-px-text2">
+            {authMode === 'login'
+              ? 'Welcome back. Login to access servers and realtime chat.'
+              : 'Pick a username and password. You can change this later.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3">
+          <Input
+            value={authUsername}
+            onChange={(e) => setAuthUsername(e.target.value)}
+            placeholder="Username"
+            className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+            autoCapitalize="none"
+            autoComplete="username"
+          />
+          <Input
+            value={authPassword}
+            onChange={(e) => setAuthPassword(e.target.value)}
+            placeholder="Password"
+            type="password"
+            className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+            autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSubmitAuth()
+            }}
+          />
+          {authError ? <div className="text-sm font-semibold text-red-400">{authError}</div> : null}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button
+            variant="secondary"
+            className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+            onClick={() => {
+              setAuthError(null)
+              setAuthMode(authMode === 'login' ? 'register' : 'login')
+            }}
+            disabled={authBusy}
+          >
+            {authMode === 'login' ? 'Create account' : 'Have an account? Login'}
+          </Button>
+          <Button className="h-9 bg-px-brand text-white hover:bg-px-brand/90" onClick={onSubmitAuth} disabled={authBusy}>
+            {authBusy ? 'Please wait…' : authMode === 'login' ? 'Login' : 'Register'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   async function onRenameChannel() {
     if (!user || !selectedChannelId) return
     setRenameChannelBusy(true)
@@ -1347,9 +1411,23 @@ function App() {
                   Reload
                 </Button>
               </div>
+
+              {user ? (
+                <div className="mt-6 rounded-2xl border border-red-500/30 bg-black/30 p-4">
+                  <div className="text-xs font-extrabold tracking-wide text-red-200">ADMIN UNLOCK</div>
+                  <div className="mt-2 flex gap-2">
+                    <Input value={adminCode} onChange={(e) => setAdminCode(e.target.value)} placeholder="Admin code" className="border-red-500/20 bg-white/5" />
+                    <Button className="bg-red-500/80 text-white hover:bg-red-500" onClick={onAdminLogin} disabled={adminBusy}>
+                      Unlock
+                    </Button>
+                  </div>
+                  {adminError ? <div className="mt-2 text-sm text-red-200">{adminError}</div> : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
+        {authDialog}
       </div>
     )
   }
@@ -2526,67 +2604,7 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={authOpen}
-        onOpenChange={(o) => {
-          setAuthOpen(o)
-          if (!o) {
-            setAuthError(null)
-            setAuthPassword('')
-          }
-        }}
-      >
-        <DialogContent className="border-white/10 bg-px-panel text-px-text">
-          <DialogHeader>
-            <DialogTitle>{authMode === 'login' ? 'Login' : 'Create account'}</DialogTitle>
-            <DialogDescription className="text-px-text2">
-              {authMode === 'login'
-                ? 'Welcome back. Login to access servers and realtime chat.'
-                : 'Pick a username and password. You can change this later.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-3">
-            <Input
-              value={authUsername}
-              onChange={(e) => setAuthUsername(e.target.value)}
-              placeholder="Username"
-              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
-              autoCapitalize="none"
-              autoComplete="username"
-            />
-            <Input
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              placeholder="Password"
-              type="password"
-              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
-              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onSubmitAuth()
-              }}
-            />
-            {authError ? <div className="text-sm font-semibold text-red-400">{authError}</div> : null}
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="secondary"
-              className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
-              onClick={() => {
-                setAuthError(null)
-                setAuthMode(authMode === 'login' ? 'register' : 'login')
-              }}
-              disabled={authBusy}
-            >
-              {authMode === 'login' ? 'Create account' : 'Have an account? Login'}
-            </Button>
-            <Button className="h-9 bg-px-brand text-white hover:bg-px-brand/90" onClick={onSubmitAuth} disabled={authBusy}>
-              {authBusy ? 'Please wait…' : authMode === 'login' ? 'Login' : 'Register'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {authDialog}
 
       <Dialog
         open={createServerOpen}
