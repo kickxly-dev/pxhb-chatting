@@ -232,7 +232,7 @@ io.on('connection', (socket) => {
         include: { author: { select: { id: true, username: true } } },
       })
 
-      io.to(`dm:${threadId}`).emit('dm:message', message)
+      io.to(`dm:${threadId}`).emit('dm:message', { ...message, threadId })
     } catch {
       socket.emit('chat:error', { message: 'Failed to send dm' })
     }

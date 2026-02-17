@@ -55,6 +55,7 @@ export type DmThreadListItem = {
 }
 export type DmMessage = {
   id: string
+  threadId: string
   content: string
   createdAt: string
   author: { id: string; username: string }

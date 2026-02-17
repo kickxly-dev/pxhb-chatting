@@ -126,6 +126,7 @@ function App() {
 
   const [dmThreads, setDmThreads] = useState<DmThreadListItem[]>([])
   const [selectedDmThreadId, setSelectedDmThreadId] = useState<string | null>(null)
+  const [dmUnread, setDmUnread] = useState<Record<string, number>>({})
 
   const initials = useMemo(() => {
     const u = user?.username?.trim()
@@ -172,6 +173,13 @@ function App() {
     setSelectedDmThreadId(item.id)
     setDmWith({ id: item.otherUser.id, username: item.otherUser.username, friendshipId: '', createdAt: item.createdAt })
     setDmThread({ id: item.id, createdAt: item.createdAt, userAId: '', userBId: '' })
+
+    setDmUnread((prev) => {
+      if (!prev[item.id]) return prev
+      const next = { ...prev }
+      delete next[item.id]
+      return next
+    })
 
     if (socketRef.current?.connected) {
       socketRef.current.emit('dm:join', { threadId: item.id })
@@ -320,6 +328,7 @@ function App() {
       setMessages([])
       setDmThreads([])
       setSelectedDmThreadId(null)
+      setDmUnread({})
       return
     }
 
@@ -425,6 +434,23 @@ function App() {
         if (prev.some((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
+
+      setDmThreads((prev) => {
+        const existing = prev.find((t) => t.id === msg.threadId)
+        const updated = existing
+          ? prev.map((t) => (t.id === msg.threadId ? { ...t, lastMessageAt: msg.createdAt } : t))
+          : prev
+        const score = (t: DmThreadListItem) => {
+          const d = new Date(t.lastMessageAt || t.createdAt)
+          return Number.isNaN(d.getTime()) ? 0 : d.getTime()
+        }
+        return [...updated].sort((a, b) => score(b) - score(a))
+      })
+
+      const isActive = navMode === 'home' && selectedDmThreadId === msg.threadId
+      if (!isActive) {
+        setDmUnread((prev) => ({ ...prev, [msg.threadId]: (prev[msg.threadId] || 0) + 1 }))
+      }
     })
 
     s.on('chat:error', (payload: unknown) => {
@@ -458,6 +484,16 @@ function App() {
     if (navMode !== 'home') return
     socketRef.current?.emit('dm:join', { threadId: selectedDmThreadId })
   }, [selectedDmThreadId, socketConnected, navMode])
+
+  useEffect(() => {
+    if (!selectedDmThreadId) return
+    setDmUnread((prev) => {
+      if (!prev[selectedDmThreadId]) return prev
+      const next = { ...prev }
+      delete next[selectedDmThreadId]
+      return next
+    })
+  }, [selectedDmThreadId])
 
   function onSendMessage() {
     const content = messageText.trim()
@@ -748,7 +784,16 @@ function App() {
                           <AvatarFallback className="text-[10px]">{t.otherUser.username.slice(0, 1).toUpperCase()}</AvatarFallback>
                         </Avatar>
                       }
-                      trailing={<span className="text-[10px] text-px-text2">{formatShortTime(t.lastMessageAt)}</span>}
+                      trailing={
+                        <div className="flex items-center gap-2">
+                          {dmUnread[t.id] ? (
+                            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-px-brand px-1.5 text-[10px] font-extrabold text-white">
+                              {dmUnread[t.id] > 99 ? '99+' : String(dmUnread[t.id])}
+                            </span>
+                          ) : null}
+                          <span className="text-[10px] text-px-text2">{formatShortTime(t.lastMessageAt)}</span>
+                        </div>
+                      }
                       subtitle={t.lastMessageAt ? 'Active' : 'Say hi'}
                     >
                       {t.otherUser.username}
@@ -920,12 +965,36 @@ function App() {
                   <Message who="System" text="Select a DM to start chatting." tone="system" />
                 ) : null}
                 {navMode === 'home'
-                  ? dmMessages.map((m) => (
-                      <Message key={m.id} who={m.author.username} text={m.content} tone={m.author.id === user?.id ? 'me' : 'bot'} />
-                    ))
-                  : messages.map((m) => (
-                      <Message key={m.id} who={m.author.username} text={m.content} tone={m.author.id === user?.id ? 'me' : 'bot'} />
-                    ))}
+                  ? dmMessages.map((m, idx) => {
+                      const prev = dmMessages[idx - 1]
+                      const sameAuthor = prev && prev.author.id === m.author.id
+                      const showHeader = !sameAuthor
+                      return (
+                        <Message
+                          key={m.id}
+                          who={m.author.username}
+                          text={m.content}
+                          tone={m.author.id === user?.id ? 'me' : 'bot'}
+                          createdAt={m.createdAt}
+                          showHeader={showHeader}
+                        />
+                      )
+                    })
+                  : messages.map((m, idx) => {
+                      const prev = messages[idx - 1]
+                      const sameAuthor = prev && prev.author.id === m.author.id
+                      const showHeader = !sameAuthor
+                      return (
+                        <Message
+                          key={m.id}
+                          who={m.author.username}
+                          text={m.content}
+                          tone={m.author.id === user?.id ? 'me' : 'bot'}
+                          createdAt={m.createdAt}
+                          showHeader={showHeader}
+                        />
+                      )
+                    })}
               </div>
             </div>
           </ScrollArea>
@@ -1442,20 +1511,42 @@ function App() {
   )
 }
 
-function Message({ who, text, tone }: { who: string; text: string; tone: 'system' | 'bot' | 'me' }) {
+function Message({
+  who,
+  text,
+  tone,
+  createdAt,
+  showHeader = true,
+}: {
+  who: string
+  text: string
+  tone: 'system' | 'bot' | 'me'
+  createdAt?: string
+  showHeader?: boolean
+}) {
   const pill =
     tone === 'system'
       ? 'bg-white/10 text-px-text2'
       : tone === 'bot'
         ? 'bg-px-brand/20 text-px-text'
         : 'bg-emerald-500/15 text-px-text'
+
+  const time = useMemo(() => {
+    if (!createdAt) return 'just now'
+    const d = new Date(createdAt)
+    if (Number.isNaN(d.getTime())) return 'just now'
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }, [createdAt])
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="flex items-center gap-2">
-        <span className={`rounded-full px-2 py-1 text-xs font-extrabold ${pill}`}>{who}</span>
-        <span className="text-xs text-px-text2">just now</span>
-      </div>
-      <div className="mt-2 text-sm leading-relaxed text-px-text">{text}</div>
+    <div className={showHeader ? 'rounded-2xl border border-white/10 bg-white/5 p-3' : 'rounded-2xl border border-white/10 bg-white/5 px-3 py-2'}>
+      {showHeader ? (
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-1 text-xs font-extrabold ${pill}`}>{who}</span>
+          <span className="text-xs text-px-text2">{time}</span>
+        </div>
+      ) : null}
+      <div className={showHeader ? 'mt-2 text-sm leading-relaxed text-px-text' : 'text-sm leading-relaxed text-px-text'}>{text}</div>
     </div>
   )
 }
