@@ -370,6 +370,8 @@ function App() {
 
   useEffect(() => {
     let alive = true
+    const start = Date.now()
+    let t: number | null = null
 
     Promise.all([
       refreshMeAndServers().catch(() => {
@@ -385,11 +387,18 @@ function App() {
     ])
       .finally(() => {
         if (!alive) return
-        setBooting(false)
+        const elapsed = Date.now() - start
+        const minMs = 4500
+        const remaining = Math.max(0, minMs - elapsed)
+        t = window.setTimeout(() => {
+          if (!alive) return
+          setBooting(false)
+        }, remaining)
       })
 
     return () => {
       alive = false
+      if (t) window.clearTimeout(t)
     }
   }, [])
 
@@ -1097,10 +1106,24 @@ function App() {
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
           <header className="flex h-14 items-center justify-between border-b border-white/10 px-4">
             <div className="flex items-center gap-3">
-              <div className="font-extrabold">
-                {navMode === 'home'
-                  ? `@ ${dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'direct-messages'}`
-                  : `# ${channels.find((c) => c.id === selectedChannelId)?.name || 'general'}`}
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-white/10 grid place-items-center">
+                  {navMode === 'home' ? <MessageCircle className="h-5 w-5 text-px-text2" /> : <Hash className="h-5 w-5 text-px-text2" />}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-extrabold text-px-text">
+                    {navMode === 'home'
+                      ? dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'Home'
+                      : servers.find((s) => s.id === selectedServerId)?.name || 'Server'}
+                  </div>
+                  <div className="truncate text-xs text-px-text2">
+                    {navMode === 'home'
+                      ? selectedDmThreadId
+                        ? 'Direct Messages'
+                        : 'Friends • DMs'
+                      : `# ${channels.find((c) => c.id === selectedChannelId)?.name || 'general'}`}
+                  </div>
+                </div>
               </div>
               <div className="text-sm text-px-text2">
                 API: {apiHealth}
@@ -1111,6 +1134,9 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-extrabold tracking-wide text-px-text2">
+                Protected by Equinox V1
+              </div>
               <Button
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
