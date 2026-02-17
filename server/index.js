@@ -170,6 +170,14 @@ const io = new SocketIOServer(httpServer, {
   },
 })
 
+const onlineUserIds = new Set()
+
+function normalizePresenceStatus(input) {
+  const v = typeof input === 'string' ? input.toUpperCase() : ''
+  if (v === 'ONLINE' || v === 'IDLE' || v === 'OFFLINE') return v
+  return 'ONLINE'
+}
+
 io.use((socket, next) => {
   // Attach the same express-session to Socket.IO requests so we can read req.session.userId
   sessionMiddleware(socket.request, {}, () => {
@@ -195,7 +203,38 @@ io.use(async (socket, next) => {
 })
 
 io.on('connection', (socket) => {
+  if (socket.data.userId) {
+    onlineUserIds.add(socket.data.userId)
+    prisma.user
+      .update({ where: { id: socket.data.userId }, data: { presenceStatus: 'ONLINE', lastSeenAt: new Date() } })
+      .catch(() => {})
+    io.emit('presence:changed', { userId: socket.data.userId, status: 'ONLINE', lastSeenAt: new Date().toISOString() })
+  }
+
   socket.emit('hello', { ok: true })
+
+  socket.on('disconnect', () => {
+    const userId = socket.data.userId
+    if (!userId) return
+
+    onlineUserIds.delete(userId)
+    prisma.user
+      .update({ where: { id: userId }, data: { presenceStatus: 'OFFLINE', lastSeenAt: new Date() } })
+      .catch(() => {})
+    io.emit('presence:changed', { userId, status: 'OFFLINE', lastSeenAt: new Date().toISOString() })
+  })
+
+  socket.on('presence:update', async (payload) => {
+    try {
+      const userId = socket.data.userId
+      if (!userId) return
+      const status = normalizePresenceStatus(payload?.status)
+      const updated = await prisma.user.update({ where: { id: userId }, data: { presenceStatus: status, lastSeenAt: new Date() }, select: { id: true, presenceStatus: true, lastSeenAt: true } })
+      io.emit('presence:changed', { userId: updated.id, status: updated.presenceStatus, lastSeenAt: updated.lastSeenAt?.toISOString() || null })
+    } catch {
+      // ignore
+    }
+  })
 
   socket.on('channel:join', async (payload) => {
     try {
@@ -875,6 +914,11 @@ function requireAdmin(req, res, next) {
   next()
 }
 
+function requireAdminSession(req, res, next) {
+  if (!req.session?.isAdmin) return res.status(403).json({ ok: false, error: 'admin_required' })
+  next()
+}
+
 async function audit(action, actorId, meta) {
   try {
     await prisma.auditLog.create({
@@ -927,6 +971,46 @@ app.get('/api/site', async (req, res) => {
   res.json({ ok: true, config: cfg })
 })
 
+app.get('/api/presence', requireAuth, async (req, res) => {
+  const ids = String(req.query.userIds || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 200)
+
+  if (!ids.length) return res.json({ ok: true, presence: [] })
+
+  const rows = await prisma.user.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, presenceStatus: true, lastSeenAt: true },
+  })
+
+  const out = rows.map((u) => ({
+    userId: u.id,
+    status: onlineUserIds.has(u.id) ? 'ONLINE' : u.presenceStatus,
+    lastSeenAt: u.lastSeenAt ? u.lastSeenAt.toISOString() : null,
+  }))
+
+  res.json({ ok: true, presence: out })
+})
+
+app.post('/api/admin/unlock', adminLoginLimiter, async (req, res) => {
+  const parsed = z
+    .object({
+      code: z.string().min(1),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+  if (!adminCode || parsed.data.code !== adminCode) {
+    await audit('admin.unlock_failed', req.session?.userId || null, { ip: req.ip })
+    return res.status(403).json({ ok: false, error: 'invalid_code' })
+  }
+
+  req.session.isAdmin = true
+  await audit('admin.unlock', req.session?.userId || null, { ip: req.ip })
+  res.json({ ok: true, admin: true })
+})
+
 app.post('/api/admin/login', requireAuth, adminLoginLimiter, async (req, res) => {
   const parsed = z
     .object({
@@ -974,7 +1058,7 @@ app.get('/api/admin/site', requireAuth, requireAdmin, async (req, res) => {
   res.json({ ok: true, config: cfg })
 })
 
-app.patch('/api/admin/site', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/admin/site', requireAdminSession, async (req, res) => {
   const parsed = z
     .object({
       lockdownEnabled: z.boolean().optional(),
@@ -990,17 +1074,17 @@ app.patch('/api/admin/site', requireAuth, requireAdmin, async (req, res) => {
       id: 'site',
       lockdownEnabled: parsed.data.lockdownEnabled ?? false,
       lockdownMessage: parsed.data.lockdownMessage ?? 'The site is temporarily locked down.',
-      updatedById: req.session.userId,
+      updatedById: req.session?.userId || null,
     },
     update: {
       ...(typeof parsed.data.lockdownEnabled === 'boolean' ? { lockdownEnabled: parsed.data.lockdownEnabled } : {}),
       ...(typeof parsed.data.lockdownMessage === 'string' ? { lockdownMessage: parsed.data.lockdownMessage } : {}),
-      updatedById: req.session.userId,
+      updatedById: req.session?.userId || null,
     },
     select: { lockdownEnabled: true, lockdownMessage: true, updatedAt: true, updatedById: true },
   })
 
-  await audit(next.lockdownEnabled ? 'site.lockdown_enabled' : 'site.lockdown_disabled', req.session.userId, {
+  await audit(next.lockdownEnabled ? 'site.lockdown_enabled' : 'site.lockdown_disabled', req.session?.userId || null, {
     message: next.lockdownMessage,
   })
 

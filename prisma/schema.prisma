@@ -29,6 +29,9 @@ model User {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
+  presenceStatus PresenceStatus @default(ONLINE)
+  lastSeenAt     DateTime?      @default(now())
+
   username     String       @unique
   passwordHash String
 
@@ -54,6 +57,12 @@ model User {
   auditLogs AuditLog[]
 
   updatedSiteConfigs SiteConfig[]
+}
+
+enum PresenceStatus {
+  ONLINE
+  IDLE
+  OFFLINE
 }
 
 model Server {

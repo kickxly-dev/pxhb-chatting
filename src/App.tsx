@@ -30,6 +30,7 @@ import {
   apiAdminOverview,
   apiAdminServers,
   apiAdminSite,
+  apiAdminUnlock,
   apiAdminUpdateSite,
   apiAdminUsers,
   apiCancelFriendRequest,
@@ -225,6 +226,25 @@ function App() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   }, [])
+
+  async function onAdminUnlockOnly() {
+    setAdminBusy(true)
+    setAdminError(null)
+    try {
+      const code = adminCode.trim()
+      if (!code) throw new Error('invalid_code')
+      const res = await apiAdminUnlock(code)
+      setAdminAuthed(res.admin === true)
+      pushToast('Admin', 'Admin access granted', 'success')
+      await refreshAdminSite()
+    } catch (e) {
+      setAdminAuthed(false)
+      setAdminError(e instanceof Error ? e.message : 'admin_failed')
+      pushToast('Admin', e instanceof Error ? e.message : 'admin_failed', 'error')
+    } finally {
+      setAdminBusy(false)
+    }
+  }
 
   async function runSearch() {
     if (!user) {
@@ -1405,25 +1425,42 @@ function App() {
                     setAuthOpen(true)
                   }}
                 >
-                  Admin Login
+                  User Login
                 </Button>
                 <Button variant="secondary" className="bg-white/5 text-red-100 hover:bg-white/10" onClick={() => window.location.reload()}>
                   Reload
                 </Button>
               </div>
 
-              {user ? (
-                <div className="mt-6 rounded-2xl border border-red-500/30 bg-black/30 p-4">
-                  <div className="text-xs font-extrabold tracking-wide text-red-200">ADMIN UNLOCK</div>
-                  <div className="mt-2 flex gap-2">
-                    <Input value={adminCode} onChange={(e) => setAdminCode(e.target.value)} placeholder="Admin code" className="border-red-500/20 bg-white/5" />
-                    <Button className="bg-red-500/80 text-white hover:bg-red-500" onClick={onAdminLogin} disabled={adminBusy}>
-                      Unlock
-                    </Button>
-                  </div>
-                  {adminError ? <div className="mt-2 text-sm text-red-200">{adminError}</div> : null}
+              <div className="mt-6 rounded-2xl border border-red-500/30 bg-black/30 p-4">
+                <div className="text-xs font-extrabold tracking-wide text-red-200">ADMIN UNLOCK (EQUINOX)</div>
+                <div className="mt-2 flex gap-2">
+                  <Input value={adminCode} onChange={(e) => setAdminCode(e.target.value)} placeholder="Admin code" className="border-red-500/20 bg-white/5" />
+                  <Button className="bg-red-500/80 text-white hover:bg-red-500" onClick={onAdminUnlockOnly} disabled={adminBusy}>
+                    Unlock
+                  </Button>
                 </div>
-              ) : null}
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="h-9 bg-white/5 text-red-100 hover:bg-white/10"
+                    onClick={async () => {
+                      try {
+                        if (!adminAuthed) await onAdminUnlockOnly()
+                        await apiAdminUpdateSite({ lockdownEnabled: false, lockdownMessage: adminSiteMessage || 'The site is temporarily locked down.' })
+                        await apiSite().then((r) => setSiteConfig(r.config)).catch(() => {})
+                        pushToast('Lockdown', 'Disabled', 'success')
+                      } catch (e) {
+                        pushToast('Lockdown', e instanceof Error ? e.message : 'disable_failed', 'error')
+                      }
+                    }}
+                    disabled={adminBusy}
+                  >
+                    Disable Lockdown
+                  </Button>
+                </div>
+                {adminError ? <div className="mt-2 text-sm text-red-200">{adminError}</div> : null}
+              </div>
             </div>
           </div>
         </div>

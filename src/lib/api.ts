@@ -283,6 +283,10 @@ export async function apiAdminLogin(code: string) {
   return apiFetch<{ admin: boolean }>('/api/admin/login', { method: 'POST', body: JSON.stringify({ code }) })
 }
 
+export async function apiAdminUnlock(code: string) {
+  return apiFetch<{ admin: boolean }>('/api/admin/unlock', { method: 'POST', body: JSON.stringify({ code }) })
+}
+
 export async function apiAdminOverview() {
   return apiFetch<{ stats: AdminOverview }>('/api/admin/overview')
 }
