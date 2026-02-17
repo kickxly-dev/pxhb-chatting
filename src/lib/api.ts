@@ -303,6 +303,18 @@ export async function apiAdminAudit(limit = 50) {
   return apiFetch<{ logs: AdminAuditLog[] }>(`/api/admin/audit?limit=${encodeURIComponent(String(limit))}`)
 }
 
+export type AdminSecurity = {
+  nodeEnv: string
+  isProd: boolean
+  cspEnabled: boolean
+  allowedOrigins: string[]
+  lockdown: boolean
+}
+
+export async function apiAdminSecurity() {
+  return apiFetch<{ security: AdminSecurity }>('/api/admin/security')
+}
+
 export async function apiAdminSite() {
   return apiFetch<{ config: SiteConfig }>('/api/admin/site')
 }

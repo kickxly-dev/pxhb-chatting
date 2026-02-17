@@ -28,6 +28,7 @@ import {
   apiAdminLogin,
   apiAdminMe,
   apiAdminOverview,
+  apiAdminSecurity,
   apiAdminServers,
   apiAdminSite,
   apiAdminUnlock,
@@ -71,6 +72,7 @@ import {
   apiSite,
   type AdminAuditLog,
   type AdminOverview,
+  type AdminSecurity,
   type AdminServer,
   type AdminUser,
   type Channel,
@@ -138,6 +140,7 @@ function App() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [adminServers, setAdminServers] = useState<AdminServer[]>([])
   const [adminAudit, setAdminAudit] = useState<AdminAuditLog[]>([])
+  const [adminSecurity, setAdminSecurity] = useState<AdminSecurity | null>(null)
 
   const [adminSiteBusy, setAdminSiteBusy] = useState(false)
   const [adminSiteMessage, setAdminSiteMessage] = useState('')
@@ -446,17 +449,25 @@ function App() {
   }
 
   async function refreshAdminData() {
-    if (!user) return
+    if (!user || !adminAuthed) return
     setAdminBusy(true)
     setAdminError(null)
     try {
-      const [ov, us, ss, al] = await Promise.all([apiAdminOverview(), apiAdminUsers(50), apiAdminServers(50), apiAdminAudit(50)])
-      setAdminStats(ov.stats)
-      setAdminUsers(us.users)
-      setAdminServers(ss.servers)
-      setAdminAudit(al.logs)
+      const [overview, usersRes, serversRes, auditRes] = await Promise.all([
+        apiAdminOverview(),
+        apiAdminUsers(50),
+        apiAdminServers(50),
+        apiAdminAudit(50),
+      ])
+      setAdminStats(overview.stats)
+      setAdminUsers(usersRes.users)
+      setAdminServers(serversRes.servers)
+      setAdminAudit(auditRes.logs)
+
+      const sec = await apiAdminSecurity()
+      setAdminSecurity(sec.security)
     } catch (e) {
-      setAdminError(e instanceof Error ? e.message : 'admin_failed')
+      setAdminError(e instanceof Error ? e.message : 'admin_refresh_failed')
     } finally {
       setAdminBusy(false)
     }
@@ -2209,6 +2220,78 @@ function App() {
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">EQUINOX SECURITY POSTURE</div>
+                  <div className={adminSecurity?.isProd ? 'text-xs font-extrabold text-emerald-300' : 'text-xs font-extrabold text-amber-300'}>
+                    {adminSecurity?.isProd ? 'PROD' : 'DEV'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-xs font-extrabold text-px-text2">CSP</div>
+                    <div className={adminSecurity?.cspEnabled ? 'mt-1 text-sm font-extrabold text-emerald-300' : 'mt-1 text-sm font-extrabold text-amber-300'}>
+                      {adminSecurity?.cspEnabled ? 'ENABLED' : 'DISABLED'}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-xs font-extrabold text-px-text2">LOCKDOWN</div>
+                    <div className={adminSecurity?.lockdown ? 'mt-1 text-sm font-extrabold text-red-300' : 'mt-1 text-sm font-extrabold text-emerald-300'}>
+                      {adminSecurity?.lockdown ? 'ENABLED' : 'DISABLED'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-px-text2">ALLOWED ORIGINS</div>
+                      <div className="mt-1 truncate font-mono text-xs text-px-text2">
+                        {(adminSecurity?.allowedOrigins || []).join(', ') || '—'}
+                      </div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText((adminSecurity?.allowedOrigins || []).join(','))
+                          pushToast('Copied', 'Allowed origins copied', 'success')
+                        } catch {
+                          pushToast('Copied', 'Copy failed', 'error')
+                        }
+                      }}
+                      disabled={!adminSecurity}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-px-text2">RENDER ENV SNIPPET</div>
+                      <div className="mt-1 truncate font-mono text-xs text-px-text2">ALLOWED_ORIGINS=&quot;https://yourdomain&quot;</div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                      onClick={async () => {
+                        try {
+                          const snippet = `ALLOWED_ORIGINS=\"https://yourdomain\"\nCSP_ENABLED=\"true\"\nADMIN_CODE=\"(secret)\"`
+                          await navigator.clipboard.writeText(snippet)
+                          pushToast('Copied', 'Env snippet copied', 'success')
+                        } catch {
+                          pushToast('Copied', 'Copy failed', 'error')
+                        }
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="mb-3 flex items-center justify-between">
                   <div className="text-xs font-extrabold tracking-wide text-px-text2">SITE LOCKDOWN</div>
