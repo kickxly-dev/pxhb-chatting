@@ -3117,8 +3117,8 @@ function ChannelButton({
     <button
       className={
         active
-          ? 'w-full rounded-xl bg-white/10 px-3 py-2 text-left transition-colors'
-          : 'w-full rounded-xl px-3 py-2 text-left text-px-text2 transition-colors hover:bg-white/5'
+          ? 'w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-left shadow-soft transition-colors'
+          : 'w-full rounded-xl border border-transparent px-3 py-2 text-left text-px-text2 transition-colors hover:border-white/10 hover:bg-white/5'
       }
       type="button"
       onClick={onClick}
@@ -3126,8 +3126,8 @@ function ChannelButton({
       <div className="flex items-center gap-2">
         {leading ? <div className="shrink-0">{leading}</div> : null}
         <div className="min-w-0 flex-1">
-          <div className={active ? 'truncate text-sm font-semibold text-px-text' : 'truncate text-sm font-semibold'}>{children}</div>
-          {subtitle ? <div className="truncate text-xs text-px-text2">{subtitle}</div> : null}
+          <div className={active ? 'truncate text-sm font-extrabold text-px-text' : 'truncate text-sm font-bold'}>{children}</div>
+          {subtitle ? <div className={active ? 'truncate text-xs text-px-text2' : 'truncate text-xs text-px-text2/80'}>{subtitle}</div> : null}
         </div>
         {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>
