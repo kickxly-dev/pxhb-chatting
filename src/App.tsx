@@ -65,6 +65,9 @@ function App() {
 
   const [booting, setBooting] = useState(true)
 
+  const [toasts, setToasts] = useState<{ id: string; title: string; message?: string; tone: 'default' | 'success' | 'error' }[]>([])
+  const toastTimersRef = useRef<Record<string, number>>({})
+
   const [navMode, setNavMode] = useState<'home' | 'server'>('server')
 
   const [servers, setServers] = useState<Server[]>([])
@@ -74,6 +77,10 @@ function App() {
   const [messages, setMessages] = useState<ApiMessage[]>([])
   const [messageText, setMessageText] = useState('')
   const [replyingTo, setReplyingTo] = useState<{ id: string; who: string; preview: string } | null>(null)
+
+  const [channelsLoading, setChannelsLoading] = useState(false)
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [membersLoading, setMembersLoading] = useState(false)
 
   const [members, setMembers] = useState<ApiMember[]>([])
 
@@ -138,6 +145,7 @@ function App() {
   const [dmThreads, setDmThreads] = useState<DmThreadListItem[]>([])
   const [selectedDmThreadId, setSelectedDmThreadId] = useState<string | null>(null)
   const [dmUnread, setDmUnread] = useState<Record<string, number>>({})
+  const [dmThreadsLoading, setDmThreadsLoading] = useState(false)
 
   const initials = useMemo(() => {
     const u = user?.username?.trim()
@@ -150,6 +158,25 @@ function App() {
       const d = new Date(iso)
       if (Number.isNaN(d.getTime())) return ''
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+  }, [])
+
+  function pushToast(title: string, message: string | undefined, tone: 'default' | 'success' | 'error' = 'default') {
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`
+    setToasts((prev) => [...prev, { id, title, message, tone }])
+    const t = window.setTimeout(() => {
+      setToasts((prev) => prev.filter((x) => x.id !== id))
+      delete toastTimersRef.current[id]
+    }, 3500)
+    toastTimersRef.current[id] = t
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const id of Object.keys(toastTimersRef.current)) {
+        window.clearTimeout(toastTimersRef.current[id])
+      }
+      toastTimersRef.current = {}
     }
   }, [])
 
@@ -170,11 +197,15 @@ function App() {
       setDmThreads([])
       return
     }
+    setDmThreadsLoading(true)
     try {
       const res = await apiListDmThreads()
       setDmThreads(res.threads)
     } catch {
       setDmThreads([])
+      pushToast('DMs', 'Failed to load DM threads', 'error')
+    } finally {
+      setDmThreadsLoading(false)
     }
   }
 
@@ -395,6 +426,9 @@ function App() {
       return
     }
 
+    setChannelsLoading(true)
+    setMembersLoading(true)
+
     apiListChannels(selectedServerId)
       .then((res) => {
         setChannels(res.channels)
@@ -406,10 +440,12 @@ function App() {
         setChannels([])
         setSelectedChannelId(null)
       })
+      .finally(() => setChannelsLoading(false))
 
     apiListMembers(selectedServerId)
       .then((res) => setMembers(res.members))
       .catch(() => setMembers([]))
+      .finally(() => setMembersLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedServerId, navMode])
 
@@ -419,9 +455,12 @@ function App() {
       return
     }
 
+    setMessagesLoading(true)
+
     apiListMessages(selectedChannelId, 75)
       .then((res) => setMessages(res.messages))
       .catch(() => setMessages([]))
+      .finally(() => setMessagesLoading(false))
   }, [user, selectedChannelId, navMode])
 
   useEffect(() => {
@@ -522,9 +561,11 @@ function App() {
       if (payload && typeof payload === 'object' && 'message' in payload) {
         const msg = (payload as { message?: unknown }).message
         setSocketError(typeof msg === 'string' && msg ? msg : 'chat_error')
+        if (typeof msg === 'string' && msg) pushToast('Error', msg, 'error')
         return
       }
       setSocketError('chat_error')
+      pushToast('Error', 'chat_error', 'error')
     })
 
     socketRef.current = s
@@ -718,8 +759,10 @@ function App() {
       setAuthOpen(false)
       setAuthPassword('')
       await refreshMeAndServers()
+      pushToast('Welcome', `Signed in as ${authUsername.trim().toLowerCase()}`, 'success')
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : 'auth_failed')
+      pushToast('Auth failed', e instanceof Error ? e.message : 'auth_failed', 'error')
     } finally {
       setAuthBusy(false)
     }
@@ -747,8 +790,10 @@ function App() {
       const general = created.server.channels?.[0]
       setSelectedChannelId(general?.id || null)
       await refreshMeAndServers()
+      pushToast('Server created', name, 'success')
     } catch (e) {
       setCreateServerError(e instanceof Error ? e.message : 'create_failed')
+      pushToast('Create server failed', e instanceof Error ? e.message : 'create_failed', 'error')
     } finally {
       setCreateServerBusy(false)
     }
@@ -790,6 +835,24 @@ function App() {
 
   return (
     <div className="h-full w-full bg-px-bg">
+      <div className="pointer-events-none fixed right-4 top-4 z-50 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={
+              t.tone === 'success'
+                ? 'pointer-events-auto rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 shadow-soft'
+                : t.tone === 'error'
+                  ? 'pointer-events-auto rounded-2xl border border-red-500/30 bg-red-500/10 p-3 shadow-soft'
+                  : 'pointer-events-auto rounded-2xl border border-white/10 bg-white/5 p-3 shadow-soft'
+            }
+          >
+            <div className="text-sm font-extrabold text-px-text">{t.title}</div>
+            {t.message ? <div className="mt-1 text-sm text-px-text2">{t.message}</div> : null}
+          </div>
+        ))}
+      </div>
+
       <div className="grid h-full w-full grid-cols-[72px_260px_1fr_280px]">
         <aside className="bg-px-rail border-r border-white/10 p-2">
           <div className="flex h-full flex-col items-center gap-2">
@@ -845,13 +908,16 @@ function App() {
             >
               <Plus className="h-5 w-5" />
             </Button>
-            <div className="mt-auto h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm text-px-text2">
-              <Settings className="h-5 w-5" />
+            <div className="mt-auto grid w-full place-items-center gap-2 pb-1">
+              <div className="h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm text-px-text2">
+                <Settings className="h-5 w-5" />
+              </div>
+              <div className="text-[10px] font-extrabold tracking-wide text-px-text2">Protected by Equinox V1</div>
             </div>
           </div>
         </aside>
 
-        <aside className="bg-px-panel border-r border-white/10 flex h-full flex-col">
+        <aside className="bg-px-panel border-r border-white/10 flex h-full flex-col animate-in fade-in duration-200">
           <div className="p-3">
             <div className="mb-3 flex items-center gap-2">
               <div className="h-9 w-9 rounded-xl bg-white/10" />
@@ -864,6 +930,7 @@ function App() {
                       ? servers.find((s) => s.id === selectedServerId)?.name || 'Server'
                       : 'No server'}
                 </div>
+                <div className="truncate text-[10px] font-extrabold tracking-wide text-px-text2">Protected by Equinox V1</div>
               </div>
             </div>
 
@@ -923,7 +990,13 @@ function App() {
           <ScrollArea className="flex-1 px-3">
             <nav className="space-y-1 pb-3">
               {navMode === 'home' ? (
-                dmThreads.length ? (
+                dmThreadsLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-11 w-full animate-pulse rounded-xl bg-white/5" />
+                    ))}
+                  </div>
+                ) : dmThreads.length ? (
                   dmThreads.map((t) => (
                     <ChannelButton
                       key={t.id}
@@ -969,7 +1042,15 @@ function App() {
                   </ChannelButton>
                 ))
               ) : (
-                <div className="px-3 py-2 text-sm text-px-text2">No channels</div>
+                channelsLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="h-10 w-full animate-pulse rounded-xl bg-white/5" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-px-text2">No channels</div>
+                )
               )}
             </nav>
           </ScrollArea>
@@ -1013,7 +1094,7 @@ function App() {
           </div>
         </aside>
 
-        <main className="bg-px-panel2 flex h-full flex-col">
+        <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
           <header className="flex h-14 items-center justify-between border-b border-white/10 px-4">
             <div className="flex items-center gap-3">
               <div className="font-extrabold">
@@ -1115,7 +1196,13 @@ function App() {
                   <Message who="System" text="Select a DM to start chatting." tone="system" />
                 ) : null}
                 {navMode === 'home'
-                  ? dmMessages.map((m, idx) => {
+                  ? messagesLoading ? (
+                      <div className="space-y-3">
+                        {Array.from({ length: 10 }).map((_, i) => (
+                          <div key={i} className="h-12 w-full animate-pulse rounded-xl bg-white/5" />
+                        ))}
+                      </div>
+                    ) : dmMessages.map((m, idx) => {
                       const prev = dmMessages[idx - 1]
                       const sameAuthor = prev && prev.author.id === m.author.id
                       const showHeader = !sameAuthor
@@ -1136,7 +1223,13 @@ function App() {
                         />
                       )
                     })
-                  : messages.map((m, idx) => {
+                  : messagesLoading ? (
+                      <div className="space-y-3">
+                        {Array.from({ length: 10 }).map((_, i) => (
+                          <div key={i} className="h-12 w-full animate-pulse rounded-xl bg-white/5" />
+                        ))}
+                      </div>
+                    ) : messages.map((m, idx) => {
                       const prev = messages[idx - 1]
                       const sameAuthor = prev && prev.author.id === m.author.id
                       const showHeader = !sameAuthor
@@ -1223,7 +1316,13 @@ function App() {
             </div>
             <ScrollArea className="flex-1 px-3">
               <div className="space-y-2 pb-3">
-                {members.length ? (
+                {membersLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="h-12 w-full animate-pulse rounded-xl bg-white/5" />
+                    ))}
+                  </div>
+                ) : members.length ? (
                   members.map((m) => <Member key={m.id} name={m.username} status="online" />)
                 ) : (
                   <Member name="No members" status="offline" />
