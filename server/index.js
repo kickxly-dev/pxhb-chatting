@@ -25,22 +25,65 @@ const httpServer = http.createServer(app)
 const isProd = process.env.NODE_ENV === 'production'
 const port = Number(process.env.PORT || 3000)
 const adminCode = process.env.ADMIN_CODE || ''
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
+const cspEnabled = isProd && process.env.CSP_ENABLED !== 'false'
 
 app.set('trust proxy', 1)
 
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: cspEnabled
+      ? {
+          useDefaults: true,
+          directives: {
+            defaultSrc: ["'self'"],
+            baseUri: ["'self'"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            imgSrc: ["'self'", 'data:', 'blob:'],
+            fontSrc: ["'self'", 'data:'],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            connectSrc: ["'self'", 'ws:', 'wss:'],
+          },
+        }
+      : false,
   }),
 )
 
+function corsOrigin(origin, cb) {
+  if (!origin) return cb(null, true)
+  if (!isProd) return cb(null, true)
+  if (allowedOrigins.length === 0) return cb(null, false)
+  if (allowedOrigins.includes(origin)) return cb(null, true)
+  return cb(null, false)
+}
+
 app.use(
   cors({
-    origin: isProd ? true : ['http://localhost:5173'],
+    origin: corsOrigin,
     credentials: true,
   }),
 )
 app.use(express.json({ limit: '1mb' }))
+
+// Origin enforcement for state-changing API requests (CSRF-ish protection)
+app.use((req, res, next) => {
+  if (!isProd) return next()
+  if (!req.path?.startsWith('/api')) return next()
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next()
+
+  const origin = req.get('origin') || ''
+  if (!origin) return res.status(403).json({ ok: false, error: 'origin_required' })
+  if (allowedOrigins.length === 0 || !allowedOrigins.includes(origin)) {
+    return res.status(403).json({ ok: false, error: 'origin_forbidden' })
+  }
+  next()
+})
 
 // Global site lockdown enforcement (non-admins blocked)
 app.use(async (req, res, next) => {
@@ -76,6 +119,13 @@ app.use(async (req, res, next) => {
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const adminLoginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 6,
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -877,7 +927,7 @@ app.get('/api/site', async (req, res) => {
   res.json({ ok: true, config: cfg })
 })
 
-app.post('/api/admin/login', requireAuth, async (req, res) => {
+app.post('/api/admin/login', requireAuth, adminLoginLimiter, async (req, res) => {
   const parsed = z
     .object({
       code: z.string().min(1),
@@ -896,6 +946,22 @@ app.post('/api/admin/login', requireAuth, async (req, res) => {
 
 app.get('/api/admin/me', requireAuth, async (req, res) => {
   res.json({ ok: true, admin: req.session.isAdmin === true })
+})
+
+app.get('/api/admin/security', requireAuth, requireAdmin, async (req, res) => {
+  res.json({
+    ok: true,
+    security: {
+      nodeEnv: process.env.NODE_ENV || 'unknown',
+      isProd,
+      cspEnabled,
+      allowedOrigins,
+      lockdown: await prisma.siteConfig
+        .findUnique({ where: { id: 'site' }, select: { lockdownEnabled: true } })
+        .then((x) => x?.lockdownEnabled === true)
+        .catch(() => false),
+    },
+  })
 })
 
 app.get('/api/admin/site', requireAuth, requireAdmin, async (req, res) => {
