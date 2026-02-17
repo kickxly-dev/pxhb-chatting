@@ -24,6 +24,7 @@ const httpServer = http.createServer(app)
 
 const isProd = process.env.NODE_ENV === 'production'
 const port = Number(process.env.PORT || 3000)
+const adminCode = process.env.ADMIN_CODE || ''
 
 app.set('trust proxy', 1)
 
@@ -399,6 +400,25 @@ function requireAuth(req, res, next) {
   next()
 }
 
+function requireAdmin(req, res, next) {
+  if (!req.session?.isAdmin) return res.status(403).json({ ok: false, error: 'admin_required' })
+  next()
+}
+
+async function audit(action, actorId, meta) {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        action,
+        actorId: actorId || null,
+        meta: meta || undefined,
+      },
+    })
+  } catch {
+    // ignore
+  }
+}
+
 async function requireMembership(req, res, serverId) {
   const userId = req.session.userId
   const membership = await prisma.membership.findUnique({
@@ -425,6 +445,73 @@ function randomCode(len = 10) {
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true })
+})
+
+app.post('/api/admin/login', requireAuth, async (req, res) => {
+  const parsed = z
+    .object({
+      code: z.string().min(1),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+  if (!adminCode || parsed.data.code !== adminCode) {
+    await audit('admin.login_failed', req.session.userId, { ip: req.ip })
+    return res.status(403).json({ ok: false, error: 'invalid_code' })
+  }
+
+  req.session.isAdmin = true
+  await audit('admin.login', req.session.userId, { ip: req.ip })
+  res.json({ ok: true, admin: true })
+})
+
+app.get('/api/admin/me', requireAuth, async (req, res) => {
+  res.json({ ok: true, admin: req.session.isAdmin === true })
+})
+
+app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res) => {
+  const [users, servers, messages, dmMessages] = await Promise.all([
+    prisma.user.count(),
+    prisma.server.count(),
+    prisma.message.count(),
+    prisma.dmMessage.count(),
+  ])
+  res.json({ ok: true, stats: { users, servers, messages, dmMessages } })
+})
+
+app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200)
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: { id: true, username: true, createdAt: true, updatedAt: true },
+  })
+  res.json({ ok: true, users })
+})
+
+app.get('/api/admin/servers', requireAuth, requireAdmin, async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200)
+  const servers = await prisma.server.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: { id: true, name: true, createdAt: true, owner: { select: { id: true, username: true } } },
+  })
+  res.json({ ok: true, servers })
+})
+
+app.get('/api/admin/audit', requireAuth, requireAdmin, async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200)
+  const logs = await prisma.auditLog.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      createdAt: true,
+      action: true,
+      meta: true,
+      actor: { select: { id: true, username: true } },
+    },
+  })
+  res.json({ ok: true, logs })
 })
 
 app.post('/api/auth/register', async (req, res) => {

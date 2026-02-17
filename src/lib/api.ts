@@ -190,3 +190,38 @@ export async function apiSendDmMessage(threadId: string, content: string) {
     body: JSON.stringify({ content }),
   })
 }
+
+export type AdminOverview = { users: number; servers: number; messages: number; dmMessages: number }
+export type AdminUser = { id: string; username: string; createdAt: string; updatedAt: string }
+export type AdminServer = { id: string; name: string; createdAt: string; owner: { id: string; username: string } }
+export type AdminAuditLog = {
+  id: string
+  createdAt: string
+  action: string
+  meta: unknown
+  actor: { id: string; username: string } | null
+}
+
+export async function apiAdminMe() {
+  return apiFetch<{ admin: boolean }>('/api/admin/me')
+}
+
+export async function apiAdminLogin(code: string) {
+  return apiFetch<{ admin: boolean }>('/api/admin/login', { method: 'POST', body: JSON.stringify({ code }) })
+}
+
+export async function apiAdminOverview() {
+  return apiFetch<{ stats: AdminOverview }>('/api/admin/overview')
+}
+
+export async function apiAdminUsers(limit = 50) {
+  return apiFetch<{ users: AdminUser[] }>(`/api/admin/users?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiAdminServers(limit = 50) {
+  return apiFetch<{ servers: AdminServer[] }>(`/api/admin/servers?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function apiAdminAudit(limit = 50) {
+  return apiFetch<{ logs: AdminAuditLog[] }>(`/api/admin/audit?limit=${encodeURIComponent(String(limit))}`)
+}

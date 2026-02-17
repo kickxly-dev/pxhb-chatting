@@ -24,6 +24,12 @@ import {
 } from '@/components/ui/dialog'
 import {
   apiAcceptFriendRequest,
+  apiAdminAudit,
+  apiAdminLogin,
+  apiAdminMe,
+  apiAdminOverview,
+  apiAdminServers,
+  apiAdminUsers,
   apiCancelFriendRequest,
   apiCreateServer,
   apiCreateChannel,
@@ -47,6 +53,10 @@ import {
   apiRegister,
   apiSendDmMessage,
   apiSendFriendRequest,
+  type AdminAuditLog,
+  type AdminOverview,
+  type AdminServer,
+  type AdminUser,
   type Channel,
   type DmMessage,
   type DmThread,
@@ -96,6 +106,16 @@ function App() {
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState<string | null>(null)
   const [authBusy, setAuthBusy] = useState(false)
+
+  const [adminAuthed, setAdminAuthed] = useState(false)
+  const [adminOpen, setAdminOpen] = useState(false)
+  const [adminCode, setAdminCode] = useState('')
+  const [adminBusy, setAdminBusy] = useState(false)
+  const [adminError, setAdminError] = useState<string | null>(null)
+  const [adminStats, setAdminStats] = useState<AdminOverview | null>(null)
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
+  const [adminServers, setAdminServers] = useState<AdminServer[]>([])
+  const [adminAudit, setAdminAudit] = useState<AdminAuditLog[]>([])
 
   const [createServerOpen, setCreateServerOpen] = useState(false)
   const [newServerName, setNewServerName] = useState('')
@@ -161,6 +181,47 @@ function App() {
     }
   }, [])
 
+  async function refreshAdminData() {
+    if (!user) return
+    setAdminBusy(true)
+    setAdminError(null)
+    try {
+      const [ov, us, ss, al] = await Promise.all([apiAdminOverview(), apiAdminUsers(50), apiAdminServers(50), apiAdminAudit(50)])
+      setAdminStats(ov.stats)
+      setAdminUsers(us.users)
+      setAdminServers(ss.servers)
+      setAdminAudit(al.logs)
+    } catch (e) {
+      setAdminError(e instanceof Error ? e.message : 'admin_failed')
+    } finally {
+      setAdminBusy(false)
+    }
+  }
+
+  async function onAdminLogin() {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+    setAdminBusy(true)
+    setAdminError(null)
+    try {
+      const code = adminCode.trim()
+      if (!code) throw new Error('invalid_code')
+      const res = await apiAdminLogin(code)
+      setAdminAuthed(res.admin === true)
+      pushToast('Admin', 'Admin access granted', 'success')
+      await refreshAdminData()
+    } catch (e) {
+      setAdminAuthed(false)
+      setAdminError(e instanceof Error ? e.message : 'admin_failed')
+      pushToast('Admin', e instanceof Error ? e.message : 'admin_failed', 'error')
+    } finally {
+      setAdminBusy(false)
+    }
+  }
+
   function pushToast(title: string, message: string | undefined, tone: 'default' | 'success' | 'error' = 'default') {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`
     setToasts((prev) => [...prev, { id, title, message, tone }])
@@ -188,6 +249,14 @@ function App() {
       setServers(list.servers)
     } else {
       setServers([])
+    }
+
+    if (me.user) {
+      apiAdminMe()
+        .then((r) => setAdminAuthed(r.admin === true))
+        .catch(() => setAdminAuthed(false))
+    } else {
+      setAdminAuthed(false)
     }
 
   }
@@ -1141,6 +1210,18 @@ function App() {
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
                 onClick={() => {
+                  setAdminOpen(true)
+                  setAdminError(null)
+                  if (user && adminAuthed) refreshAdminData()
+                }}
+                disabled={!user}
+              >
+                Admin
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => {
                   if (!user) {
                     setAuthMode('login')
                     setAuthOpen(true)
@@ -1369,6 +1450,108 @@ function App() {
           </aside>
         )}
       </div>
+
+      <Dialog
+        open={adminOpen}
+        onOpenChange={(o) => {
+          setAdminOpen(o)
+          if (o && user && adminAuthed) refreshAdminData()
+        }}
+      >
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Admin Panel</DialogTitle>
+            <DialogDescription>Site owner controls • Protected by Equinox V1</DialogDescription>
+          </DialogHeader>
+
+          {!user ? (
+            <div className="text-sm text-px-text2">Login required.</div>
+          ) : !adminAuthed ? (
+            <div className="space-y-3">
+              <div className="text-sm text-px-text2">Enter admin code to unlock global controls.</div>
+              <div className="flex gap-2">
+                <Input value={adminCode} onChange={(e) => setAdminCode(e.target.value)} placeholder="Admin code" />
+                <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={onAdminLogin} disabled={adminBusy}>
+                  Unlock
+                </Button>
+              </div>
+              {adminError ? <div className="text-sm text-red-400">{adminError}</div> : null}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-extrabold tracking-wide text-px-text2">OVERVIEW</div>
+                <Button variant="secondary" className="h-8 bg-white/5 text-px-text2 hover:bg-white/10" onClick={refreshAdminData} disabled={adminBusy}>
+                  Refresh
+                </Button>
+              </div>
+
+              {adminError ? <div className="text-sm text-red-400">{adminError}</div> : null}
+              {adminBusy ? <div className="text-sm text-px-text2">Loading…</div> : null}
+
+              <div className="grid grid-cols-4 gap-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs font-extrabold text-px-text2">USERS</div>
+                  <div className="mt-1 text-xl font-extrabold">{adminStats?.users ?? '—'}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs font-extrabold text-px-text2">SERVERS</div>
+                  <div className="mt-1 text-xl font-extrabold">{adminStats?.servers ?? '—'}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs font-extrabold text-px-text2">MESSAGES</div>
+                  <div className="mt-1 text-xl font-extrabold">{adminStats?.messages ?? '—'}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs font-extrabold text-px-text2">DM MSGS</div>
+                  <div className="mt-1 text-xl font-extrabold">{adminStats?.dmMessages ?? '—'}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">LATEST USERS</div>
+                  <div className="space-y-2">
+                    {adminUsers.slice(0, 8).map((u) => (
+                      <div key={u.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                        <div className="truncate text-sm font-bold">{u.username}</div>
+                        <div className="truncate text-xs text-px-text2">{u.id}</div>
+                      </div>
+                    ))}
+                    {!adminUsers.length ? <div className="text-sm text-px-text2">No users</div> : null}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">LATEST SERVERS</div>
+                  <div className="space-y-2">
+                    {adminServers.slice(0, 8).map((s) => (
+                      <div key={s.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                        <div className="truncate text-sm font-bold">{s.name}</div>
+                        <div className="truncate text-xs text-px-text2">owner: {s.owner.username}</div>
+                      </div>
+                    ))}
+                    {!adminServers.length ? <div className="text-sm text-px-text2">No servers</div> : null}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-extrabold tracking-wide text-px-text2">AUDIT LOG</div>
+                  <div className="space-y-2">
+                    {adminAudit.slice(0, 10).map((l) => (
+                      <div key={l.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                        <div className="truncate text-sm font-bold">{l.action}</div>
+                        <div className="truncate text-xs text-px-text2">{l.actor?.username || 'system'}</div>
+                      </div>
+                    ))}
+                    {!adminAudit.length ? <div className="text-sm text-px-text2">No logs</div> : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={friendsOpen}
