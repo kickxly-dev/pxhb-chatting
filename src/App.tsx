@@ -63,6 +63,8 @@ import {
 function App() {
   const [user, setUser] = useState<User | null>(null)
 
+  const [booting, setBooting] = useState(true)
+
   const [navMode, setNavMode] = useState<'home' | 'server'>('server')
 
   const [servers, setServers] = useState<Server[]>([])
@@ -336,17 +338,28 @@ function App() {
   }
 
   useEffect(() => {
-    refreshMeAndServers().catch(() => {
-      setUser(null)
-      setServers([])
-    })
+    let alive = true
 
-    fetch('/api/health', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        setApiHealth(j?.ok === true ? 'ok' : 'fail')
+    Promise.all([
+      refreshMeAndServers().catch(() => {
+        setUser(null)
+        setServers([])
+      }),
+      fetch('/api/health', { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          setApiHealth(j?.ok === true ? 'ok' : 'fail')
+        })
+        .catch(() => setApiHealth('fail')),
+    ])
+      .finally(() => {
+        if (!alive) return
+        setBooting(false)
       })
-      .catch(() => setApiHealth('fail'))
+
+    return () => {
+      alive = false
+    }
   }, [])
 
   useEffect(() => {
@@ -739,6 +752,40 @@ function App() {
     } finally {
       setCreateServerBusy(false)
     }
+  }
+
+  if (booting) {
+    return (
+      <div className="h-full w-full bg-px-bg">
+        <div className="relative grid h-full w-full place-items-center overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(88,101,242,0.35),transparent_55%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom,rgba(16,185,129,0.18),transparent_55%)]" />
+
+          <div className="relative w-full max-w-md px-6">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-soft">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-2xl bg-px-brand/90 shadow-soft grid place-items-center text-lg font-black text-white">
+                  PX
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-xl font-extrabold text-px-text">PXHB Chatting</div>
+                  <div className="truncate text-sm text-px-text2">Protected by Equinox V1</div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center gap-3">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-px-brand" />
+                <div className="text-sm font-semibold text-px-text2">Loading secure session…</div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-px-text2">
+                API: {apiHealth} • Socket: {socketConnected ? 'connected' : 'connecting…'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
