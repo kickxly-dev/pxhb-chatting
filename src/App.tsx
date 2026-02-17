@@ -4,6 +4,13 @@ import { Hash, MessageCircle, Plus, Settings, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -747,26 +754,54 @@ function App() {
 
             <div className="mb-2 flex items-center justify-between">
               <div className="text-xs font-extrabold tracking-wide text-px-text2">{navMode === 'home' ? 'DIRECT MESSAGES' : 'TEXT CHANNELS'}</div>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="h-7 w-7 rounded-lg bg-white/5 text-px-text2 hover:bg-white/10"
-                onClick={() => {
-                  if (!user) {
-                    setAuthMode('login')
-                    setAuthOpen(true)
-                    return
-                  }
-                  if (navMode === 'home') {
-                    setFriendsOpen(true)
-                    refreshFriendsData()
-                    return
-                  }
-                  setCreateChannelOpen(true)
-                }}
-              >
-                {navMode === 'home' ? '⋯' : '+'}
-              </Button>
+              {navMode === 'home' ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="secondary" size="icon" className="h-7 w-7 rounded-lg bg-white/5 text-px-text2 hover:bg-white/10">
+                      ⋯
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (!user) {
+                          setAuthMode('login')
+                          setAuthOpen(true)
+                          return
+                        }
+                        setFriendsOpen(true)
+                        refreshFriendsData()
+                      }}
+                    >
+                      Friends
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        refreshDmThreads()
+                      }}
+                    >
+                      Refresh DMs
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg bg-white/5 text-px-text2 hover:bg-white/10"
+                  onClick={() => {
+                    if (!user) {
+                      setAuthMode('login')
+                      setAuthOpen(true)
+                      return
+                    }
+                    setCreateChannelOpen(true)
+                  }}
+                >
+                  +
+                </Button>
+              )}
             </div>
           </div>
 
