@@ -36,6 +36,8 @@ export type Message = {
   id: string
   content: string
   createdAt: string
+  editedAt?: string | null
+  deletedAt?: string | null
   author: { id: string; username: string }
   replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
   reactions?: ReactionSummary[]
@@ -63,6 +65,8 @@ export type DmMessage = {
   threadId: string
   content: string
   createdAt: string
+  editedAt?: string | null
+  deletedAt?: string | null
   author: { id: string; username: string }
   replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
   reactions?: ReactionSummary[]
@@ -142,6 +146,17 @@ export async function apiListMessages(channelId: string, limit = 50) {
   return apiFetch<{ messages: Message[] }>(`/api/channels/${channelId}/messages?limit=${encodeURIComponent(String(limit))}`)
 }
 
+export async function apiEditMessage(messageId: string, content: string) {
+  return apiFetch<{ message: Message }>(`/api/messages/${encodeURIComponent(messageId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  })
+}
+
+export async function apiDeleteMessage(messageId: string) {
+  return apiFetch<{ message: Message }>(`/api/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' })
+}
+
 export async function apiSendFriendRequest(username: string) {
   return apiFetch<{ request: FriendRequest }>('/api/friends/requests', {
     method: 'POST',
@@ -189,6 +204,17 @@ export async function apiSendDmMessage(threadId: string, content: string) {
     method: 'POST',
     body: JSON.stringify({ content }),
   })
+}
+
+export async function apiEditDmMessage(messageId: string, content: string) {
+  return apiFetch<{ message: DmMessage }>(`/api/dm-messages/${encodeURIComponent(messageId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  })
+}
+
+export async function apiDeleteDmMessage(messageId: string) {
+  return apiFetch<{ message: DmMessage }>(`/api/dm-messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' })
 }
 
 export type AdminOverview = { users: number; servers: number; messages: number; dmMessages: number }

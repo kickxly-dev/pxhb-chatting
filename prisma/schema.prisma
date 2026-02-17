@@ -119,6 +119,8 @@ model Channel {
 model Message {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
 
   content   String
 
@@ -215,6 +217,8 @@ model DmThread {
 model DmMessage {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
   content   String
 
   replyToId String?

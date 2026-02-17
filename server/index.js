@@ -135,6 +135,97 @@ io.on('connection', (socket) => {
     }
   })
 
+  socket.on('chat:edit', async (payload) => {
+    try {
+      const { messageId, content } = payload || {}
+      if (!messageId || typeof content !== 'string' || !content.trim()) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true, authorId: true, deletedAt: true } })
+      if (!msg) return
+      if (msg.authorId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+      if (msg.deletedAt) {
+        socket.emit('chat:error', { message: 'Cannot edit deleted message' })
+        return
+      }
+
+      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+      if (!channel) return
+
+      const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+      if (!membership) {
+        socket.emit('chat:error', { message: 'Not a member' })
+        return
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: messageId },
+        data: { content: content.trim(), editedAt: new Date() },
+        select: { id: true, content: true, editedAt: true, deletedAt: true, channelId: true },
+      })
+
+      io.to(`channel:${updated.channelId}`).emit('chat:edited', {
+        messageId: updated.id,
+        content: updated.content,
+        editedAt: updated.editedAt,
+        deletedAt: updated.deletedAt,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to edit' })
+    }
+  })
+
+  socket.on('chat:delete', async (payload) => {
+    try {
+      const { messageId } = payload || {}
+      if (!messageId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true, authorId: true, deletedAt: true } })
+      if (!msg) return
+      if (msg.authorId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+      if (msg.deletedAt) return
+
+      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+      if (!channel) return
+
+      const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+      if (!membership) {
+        socket.emit('chat:error', { message: 'Not a member' })
+        return
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: messageId },
+        data: { deletedAt: new Date(), content: '' },
+        select: { id: true, channelId: true, deletedAt: true },
+      })
+
+      io.to(`channel:${updated.channelId}`).emit('chat:deleted', {
+        messageId: updated.id,
+        deletedAt: updated.deletedAt,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to delete' })
+    }
+  })
+
   socket.on('chat:send', async (payload) => {
     try {
       const { channelId, content, replyToId } = payload || {}
@@ -379,6 +470,91 @@ io.on('connection', (socket) => {
       })
     } catch {
       socket.emit('chat:error', { message: 'Failed to react' })
+    }
+  })
+
+  socket.on('dm:edit', async (payload) => {
+    try {
+      const { messageId, content } = payload || {}
+      if (!messageId || typeof content !== 'string' || !content.trim()) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true, authorId: true, deletedAt: true } })
+      if (!msg) return
+      if (msg.authorId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+      if (msg.deletedAt) {
+        socket.emit('chat:error', { message: 'Cannot edit deleted message' })
+        return
+      }
+
+      const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      const updated = await prisma.dmMessage.update({
+        where: { id: messageId },
+        data: { content: content.trim(), editedAt: new Date() },
+        select: { id: true, threadId: true, content: true, editedAt: true, deletedAt: true },
+      })
+
+      io.to(`dm:${updated.threadId}`).emit('dm:edited', {
+        threadId: updated.threadId,
+        messageId: updated.id,
+        content: updated.content,
+        editedAt: updated.editedAt,
+        deletedAt: updated.deletedAt,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to edit dm' })
+    }
+  })
+
+  socket.on('dm:delete', async (payload) => {
+    try {
+      const { messageId } = payload || {}
+      if (!messageId) return
+
+      const userId = socket.data.userId
+      if (!userId) {
+        socket.emit('chat:error', { message: 'Not authenticated' })
+        return
+      }
+
+      const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true, authorId: true, deletedAt: true } })
+      if (!msg) return
+      if (msg.authorId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+      if (msg.deletedAt) return
+
+      const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+      if (!thread) return
+      if (thread.userAId !== userId && thread.userBId !== userId) {
+        socket.emit('chat:error', { message: 'Forbidden' })
+        return
+      }
+
+      const updated = await prisma.dmMessage.update({ where: { id: messageId }, data: { deletedAt: new Date(), content: '' }, select: { id: true, threadId: true, deletedAt: true } })
+
+      io.to(`dm:${updated.threadId}`).emit('dm:deleted', {
+        threadId: updated.threadId,
+        messageId: updated.id,
+        deletedAt: updated.deletedAt,
+      })
+    } catch {
+      socket.emit('chat:error', { message: 'Failed to delete dm' })
     }
   })
 })
@@ -818,6 +994,118 @@ app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   })
 
   res.json({ ok: true, message: { ...message, reactions: summarizeReactions(message.reactions, userId) } })
+})
+
+app.patch('/api/messages/:messageId', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+  const parsed = z.object({ content: z.string().min(1).max(2000) }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true, authorId: true, deletedAt: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (msg.authorId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (msg.deletedAt) return res.status(400).json({ ok: false, error: 'cannot_edit_deleted' })
+
+  const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.message.update({
+    where: { id: messageId },
+    data: { content: parsed.data.content.trim(), editedAt: new Date() },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, message: { ...updated, reactions: summarizeReactions(updated.reactions, userId) } })
+})
+
+app.delete('/api/messages/:messageId', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+
+  const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, channelId: true, authorId: true, deletedAt: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (msg.authorId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (msg.deletedAt) return res.status(400).json({ ok: false, error: 'already_deleted' })
+
+  const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { id: true, serverId: true } })
+  if (!channel) return res.status(404).json({ ok: false, error: 'not_found' })
+
+  const membership = await prisma.membership.findUnique({ where: { userId_serverId: { userId, serverId: channel.serverId } }, select: { id: true } })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.message.update({
+    where: { id: messageId },
+    data: { deletedAt: new Date(), content: '' },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, message: { ...updated, reactions: summarizeReactions(updated.reactions, userId) } })
+})
+
+app.patch('/api/dm-messages/:messageId', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+  const parsed = z.object({ content: z.string().min(1).max(2000) }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true, authorId: true, deletedAt: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (msg.authorId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (msg.deletedAt) return res.status(400).json({ ok: false, error: 'cannot_edit_deleted' })
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.dmMessage.update({
+    where: { id: messageId },
+    data: { content: parsed.data.content.trim(), editedAt: new Date() },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, message: { ...updated, reactions: summarizeReactions(updated.reactions, userId) } })
+})
+
+app.delete('/api/dm-messages/:messageId', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { messageId } = req.params
+
+  const msg = await prisma.dmMessage.findUnique({ where: { id: messageId }, select: { id: true, threadId: true, authorId: true, deletedAt: true } })
+  if (!msg) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (msg.authorId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+  if (msg.deletedAt) return res.status(400).json({ ok: false, error: 'already_deleted' })
+
+  const thread = await prisma.dmThread.findUnique({ where: { id: msg.threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) return res.status(404).json({ ok: false, error: 'not_found' })
+  if (thread.userAId !== userId && thread.userBId !== userId) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const updated = await prisma.dmMessage.update({
+    where: { id: messageId },
+    data: { deletedAt: new Date(), content: '' },
+    include: {
+      author: { select: { id: true, username: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      reactions: { select: { emoji: true, userId: true } },
+    },
+  })
+
+  res.json({ ok: true, message: { ...updated, reactions: summarizeReactions(updated.reactions, userId) } })
 })
 
 app.get('/api/servers', requireAuth, async (req, res) => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Copy, Hash, MessageCircle, MoreHorizontal, Plus, Reply, Settings, SmilePlus, Users } from 'lucide-react'
+import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Plus, Reply, Settings, SmilePlus, Trash2, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,10 @@ import {
   apiCreateInvite,
   apiDeclineFriendRequest,
   apiDeleteChannel,
+  apiDeleteDmMessage,
+  apiDeleteMessage,
+  apiEditDmMessage,
+  apiEditMessage,
   apiListFriends,
   apiListFriendRequests,
   apiListDmThreads,
@@ -87,6 +91,9 @@ function App() {
   const [messages, setMessages] = useState<ApiMessage[]>([])
   const [messageText, setMessageText] = useState('')
   const [replyingTo, setReplyingTo] = useState<{ id: string; who: string; preview: string } | null>(null)
+
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editingMessageText, setEditingMessageText] = useState('')
 
   const [channelsLoading, setChannelsLoading] = useState(false)
   const [messagesLoading, setMessagesLoading] = useState(false)
@@ -180,6 +187,80 @@ function App() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   }, [])
+
+  async function onBeginEdit(messageId: string, current: string) {
+    setEditingMessageId(messageId)
+    setEditingMessageText(current)
+  }
+
+  function onCancelEdit() {
+    setEditingMessageId(null)
+    setEditingMessageText('')
+  }
+
+  async function onSaveEdit(messageId: string) {
+    const content = editingMessageText.trim()
+    if (!content) return
+
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+
+    try {
+      if (navMode === 'server') {
+        if (socketConnected && socketRef.current) {
+          socketRef.current.emit('chat:edit', { messageId, content })
+        } else {
+          const res = await apiEditMessage(messageId, content)
+          setMessages((prev) => prev.map((m) => (m.id === messageId ? res.message : m)))
+        }
+      }
+      if (navMode === 'home') {
+        if (socketConnected && socketRef.current) {
+          socketRef.current.emit('dm:edit', { messageId, content })
+        } else {
+          const res = await apiEditDmMessage(messageId, content)
+          setDmMessages((prev) => prev.map((m) => (m.id === messageId ? res.message : m)))
+        }
+      }
+      onCancelEdit()
+      pushToast('Message', 'Edited', 'success')
+    } catch (e) {
+      pushToast('Edit failed', e instanceof Error ? e.message : 'edit_failed', 'error')
+    }
+  }
+
+  async function onDelete(messageId: string) {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+
+    try {
+      if (navMode === 'server') {
+        if (socketConnected && socketRef.current) {
+          socketRef.current.emit('chat:delete', { messageId })
+        } else {
+          const res = await apiDeleteMessage(messageId)
+          setMessages((prev) => prev.map((m) => (m.id === messageId ? res.message : m)))
+        }
+      }
+      if (navMode === 'home') {
+        if (socketConnected && socketRef.current) {
+          socketRef.current.emit('dm:delete', { messageId })
+        } else {
+          const res = await apiDeleteDmMessage(messageId)
+          setDmMessages((prev) => prev.map((m) => (m.id === messageId ? res.message : m)))
+        }
+      }
+      pushToast('Message', 'Deleted', 'success')
+    } catch (e) {
+      pushToast('Delete failed', e instanceof Error ? e.message : 'delete_failed', 'error')
+    }
+  }
 
   async function refreshAdminData() {
     if (!user) return
@@ -600,6 +681,16 @@ function App() {
       )
     })
 
+    s.on('chat:edited', (payload: { messageId: string; content: string; editedAt: string | null; deletedAt: string | null }) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === payload.messageId ? { ...m, content: payload.content, editedAt: payload.editedAt, deletedAt: payload.deletedAt } : m)),
+      )
+    })
+
+    s.on('chat:deleted', (payload: { messageId: string; deletedAt: string | null }) => {
+      setMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, content: '', deletedAt: payload.deletedAt } : m)))
+    })
+
     s.on('dm:message', (msg: DmMessage) => {
       setDmMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev
@@ -633,6 +724,16 @@ function App() {
           return { ...m, reactions }
         }),
       )
+    })
+
+    s.on('dm:edited', (payload: { threadId: string; messageId: string; content: string; editedAt: string | null; deletedAt: string | null }) => {
+      setDmMessages((prev) =>
+        prev.map((m) => (m.id === payload.messageId ? { ...m, content: payload.content, editedAt: payload.editedAt, deletedAt: payload.deletedAt } : m)),
+      )
+    })
+
+    s.on('dm:deleted', (payload: { threadId: string; messageId: string; deletedAt: string | null }) => {
+      setDmMessages((prev) => prev.map((m) => (m.id === payload.messageId ? { ...m, content: '', deletedAt: payload.deletedAt } : m)))
     })
 
     s.on('chat:error', (payload: unknown) => {
@@ -1313,21 +1414,46 @@ function App() {
                       const prev = dmMessages[idx - 1]
                       const sameAuthor = prev && prev.author.id === m.author.id
                       const showHeader = !sameAuthor
+                      const isMine = m.author.id === user?.id
+                      const isDeleted = !!m.deletedAt
+                      const showText = isDeleted ? 'Message deleted' : m.content
                       return (
-                        <Message
-                          key={m.id}
-                          who={m.author.username}
-                          text={m.content}
-                          tone={m.author.id === user?.id ? 'me' : 'bot'}
-                          createdAt={m.createdAt}
-                          showHeader={showHeader}
-                          replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
-                          reactions={m.reactions}
-                          onReact={(emoji) => onToggleReaction(m.id, emoji)}
-                          onReply={() => {
-                            setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
-                          }}
-                        />
+                        <div key={m.id}>
+                          {editingMessageId === m.id && !isDeleted ? (
+                            <div className="-mx-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2">
+                              <div className="text-xs font-extrabold text-px-text2">Editing message</div>
+                              <div className="mt-2 flex gap-2">
+                                <Input value={editingMessageText} onChange={(e) => setEditingMessageText(e.target.value)} className="flex-1" />
+                                <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={() => onSaveEdit(m.id)}>
+                                  Save
+                                </Button>
+                                <Button variant="secondary" className="bg-white/5 text-px-text2 hover:bg-white/10" onClick={onCancelEdit}>
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Message
+                              who={m.author.username}
+                              text={showText}
+                              tone={isDeleted ? 'system' : m.author.id === user?.id ? 'me' : 'bot'}
+                              createdAt={m.createdAt}
+                              showHeader={showHeader}
+                              replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
+                              reactions={m.reactions}
+                              editedAt={m.editedAt}
+                              deletedAt={m.deletedAt}
+                              canEdit={isMine && !isDeleted}
+                              canDelete={isMine && !isDeleted}
+                              onEdit={() => onBeginEdit(m.id, m.content)}
+                              onDelete={() => onDelete(m.id)}
+                              onReact={(emoji) => onToggleReaction(m.id, emoji)}
+                              onReply={() => {
+                                setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
+                              }}
+                            />
+                          )}
+                        </div>
                       )
                     })
                   : messagesLoading ? (
@@ -1340,21 +1466,46 @@ function App() {
                       const prev = messages[idx - 1]
                       const sameAuthor = prev && prev.author.id === m.author.id
                       const showHeader = !sameAuthor
+                      const isMine = m.author.id === user?.id
+                      const isDeleted = !!m.deletedAt
+                      const showText = isDeleted ? 'Message deleted' : m.content
                       return (
-                        <Message
-                          key={m.id}
-                          who={m.author.username}
-                          text={m.content}
-                          tone={m.author.id === user?.id ? 'me' : 'bot'}
-                          createdAt={m.createdAt}
-                          showHeader={showHeader}
-                          replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
-                          reactions={m.reactions}
-                          onReact={(emoji) => onToggleReaction(m.id, emoji)}
-                          onReply={() => {
-                            setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
-                          }}
-                        />
+                        <div key={m.id}>
+                          {editingMessageId === m.id && !isDeleted ? (
+                            <div className="-mx-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2">
+                              <div className="text-xs font-extrabold text-px-text2">Editing message</div>
+                              <div className="mt-2 flex gap-2">
+                                <Input value={editingMessageText} onChange={(e) => setEditingMessageText(e.target.value)} className="flex-1" />
+                                <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={() => onSaveEdit(m.id)}>
+                                  Save
+                                </Button>
+                                <Button variant="secondary" className="bg-white/5 text-px-text2 hover:bg-white/10" onClick={onCancelEdit}>
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Message
+                              who={m.author.username}
+                              text={showText}
+                              tone={isDeleted ? 'system' : m.author.id === user?.id ? 'me' : 'bot'}
+                              createdAt={m.createdAt}
+                              showHeader={showHeader}
+                              replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
+                              reactions={m.reactions}
+                              editedAt={m.editedAt}
+                              deletedAt={m.deletedAt}
+                              canEdit={isMine && !isDeleted}
+                              canDelete={isMine && !isDeleted}
+                              onEdit={() => onBeginEdit(m.id, m.content)}
+                              onDelete={() => onDelete(m.id)}
+                              onReact={(emoji) => onToggleReaction(m.id, emoji)}
+                              onReply={() => {
+                                setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
+                              }}
+                            />
+                          )}
+                        </div>
                       )
                     })}
               </div>
@@ -2007,21 +2158,33 @@ function Message({
   text,
   tone,
   createdAt,
+  editedAt,
+  deletedAt,
   showHeader = true,
   onReply,
   replyPreview,
   reactions,
   onReact,
+  canEdit,
+  canDelete,
+  onEdit,
+  onDelete,
 }: {
   who: string
   text: string
   tone: 'system' | 'bot' | 'me'
   createdAt?: string
+  editedAt?: string | null
+  deletedAt?: string | null
   showHeader?: boolean
   onReply?: (who: string) => void
   replyPreview?: { who: string; text: string } | null
   reactions?: ReactionSummary[]
   onReact?: (emoji: string) => void
+  canEdit?: boolean
+  canDelete?: boolean
+  onEdit?: () => void
+  onDelete?: () => void
 }) {
   const time = useMemo(() => {
     if (!createdAt) return 'just now'
@@ -2050,6 +2213,7 @@ function Message({
     }
   }
 
+  const isDeleted = !!deletedAt
   return (
     <div className={showHeader ? 'group relative -mx-2 rounded-lg px-2 py-2 hover:bg-white/5' : 'group relative -mx-2 rounded-lg px-2 py-1 hover:bg-white/5'}>
       <div className="flex gap-3">
@@ -2077,6 +2241,7 @@ function Message({
             </div>
           ) : null}
           <div className={showHeader ? 'mt-0.5 text-sm leading-relaxed text-px-text' : 'text-sm leading-relaxed text-px-text'}>{text}</div>
+          {!isDeleted && editedAt ? <div className="mt-1 text-[10px] font-extrabold text-px-text2">(edited)</div> : null}
 
           {reactions && reactions.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -2109,6 +2274,26 @@ function Message({
         >
           <Copy className="h-4 w-4" />
         </button>
+        {canEdit ? (
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
+            onClick={onEdit}
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
+            onClick={onDelete}
+            title="Delete"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
         <button
           type="button"
           className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-px-panel text-px-text2 hover:bg-white/10"
