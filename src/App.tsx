@@ -112,6 +112,8 @@ function App() {
   const [messageText, setMessageText] = useState('')
   const [replyingTo, setReplyingTo] = useState<{ id: string; who: string; preview: string } | null>(null)
 
+  const [channelUnread, setChannelUnread] = useState<Record<string, number>>({})
+
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editingMessageText, setEditingMessageText] = useState('')
 
@@ -944,6 +946,19 @@ function App() {
         if (prev.some((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
+
+      const active = navMode === 'server' && selectedChannelId === msg.channelId
+      if (!active) {
+        setChannelUnread((prev) => ({ ...prev, [msg.channelId]: (prev[msg.channelId] || 0) + 1 }))
+
+        const uname = user?.username?.trim()
+        if (uname) {
+          const needle = `@${uname}`
+          if (typeof msg.content === 'string' && msg.content.toLowerCase().includes(needle.toLowerCase())) {
+            pushToast('Mention', `@${uname} in #${channels.find((c) => c.id === msg.channelId)?.name || 'channel'}`, 'default')
+          }
+        }
+      }
     })
 
     s.on('chat:reaction', (payload: { messageId: string; emoji: string; userId: string; added: boolean }) => {
@@ -1151,6 +1166,17 @@ function App() {
     if (navMode !== 'server') return
     socketRef.current?.emit('channel:join', { channelId: selectedChannelId })
   }, [selectedChannelId, socketConnected, navMode])
+
+  useEffect(() => {
+    if (!selectedChannelId) return
+    if (navMode !== 'server') return
+    setChannelUnread((prev) => {
+      if (!prev[selectedChannelId]) return prev
+      const next = { ...prev }
+      delete next[selectedChannelId]
+      return next
+    })
+  }, [selectedChannelId, navMode])
 
   useEffect(() => {
     if (!selectedDmThreadId) return
@@ -1759,6 +1785,13 @@ function App() {
                     active={c.id === selectedChannelId}
                     onClick={() => setSelectedChannelId(c.id)}
                     leading={<Hash className="h-4 w-4 text-px-text2" />}
+                    trailing={
+                      channelUnread[c.id] ? (
+                        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-px-brand px-1.5 text-[10px] font-extrabold text-white">
+                          {channelUnread[c.id] > 99 ? '99+' : String(channelUnread[c.id])}
+                        </span>
+                      ) : null
+                    }
                   >
                     {c.name}
                   </ChannelButton>

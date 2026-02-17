@@ -35,6 +35,7 @@ export type ReactionSummary = { emoji: string; count: number; viewerHasReacted: 
 
 export type Message = {
   id: string
+  channelId: string
   content: string
   createdAt: string
   editedAt?: string | null
