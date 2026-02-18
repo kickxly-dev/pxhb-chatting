@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "SecurityConfig"
+ADD COLUMN     "rateLimitEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "rateLimitWindowMs" INTEGER NOT NULL DEFAULT 60000,
+ADD COLUMN     "rateLimitAuthMax" INTEGER NOT NULL DEFAULT 20,
+ADD COLUMN     "rateLimitAdminMax" INTEGER NOT NULL DEFAULT 6,
+ADD COLUMN     "rateLimitApiMax" INTEGER NOT NULL DEFAULT 240,
+ADD COLUMN     "sessionCookieSameSite" TEXT NOT NULL DEFAULT 'lax',
+ADD COLUMN     "sessionCookieSecure" TEXT NOT NULL DEFAULT 'auto',
+ADD COLUMN     "sessionCookieMaxAgeMs" INTEGER NOT NULL DEFAULT 1209600000,
+ADD COLUMN     "lockdownEnabled" BOOLEAN NOT NULL DEFAULT false;

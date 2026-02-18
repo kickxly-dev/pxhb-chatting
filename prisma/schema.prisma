@@ -65,6 +65,21 @@ model SecurityConfig {
   allowedOrigins String[]
   cspEnabled     Boolean  @default(true)
 
+  // Rate limits (per minute)
+  rateLimitEnabled   Boolean @default(true)
+  rateLimitWindowMs  Int     @default(60000)
+  rateLimitAuthMax   Int     @default(20)
+  rateLimitAdminMax  Int     @default(6)
+  rateLimitApiMax    Int     @default(240)
+
+  // Session cookie policy
+  sessionCookieSameSite String  @default("lax")
+  sessionCookieSecure   String  @default("auto")
+  sessionCookieMaxAgeMs Int     @default(1209600000)
+
+  // Emergency mode
+  lockdownEnabled Boolean @default(false)
+
   updatedAt DateTime @updatedAt
 }
 

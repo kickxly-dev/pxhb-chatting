@@ -35,34 +35,106 @@ const envCspEnabled = isProd && process.env.CSP_ENABLED !== 'false'
 let runtimeAllowedOrigins = [...envAllowedOrigins]
 let runtimeCspEnabled = envCspEnabled
 
+// Runtime Equinox controls
+let runtimeRateLimitEnabled = true
+let runtimeRateLimitWindowMs = 60000
+let runtimeRateLimitAuthMax = 20
+let runtimeRateLimitAdminMax = 6
+let runtimeRateLimitApiMax = 240
+let runtimeSessionCookieSameSite = 'lax'
+let runtimeSessionCookieSecure = 'auto'
+let runtimeSessionCookieMaxAgeMs = 1209600000
+let runtimeLockdownEnabled = false
+
 async function loadSecurityConfig() {
   try {
     const row = await prisma.securityConfig.findUnique({ where: { id: 'default' } })
     if (!row) {
       const created = await prisma.securityConfig.create({
-        data: { id: 'default', allowedOrigins: envAllowedOrigins, cspEnabled: envCspEnabled },
+        data: {
+          id: 'default',
+          allowedOrigins: envAllowedOrigins,
+          cspEnabled: envCspEnabled,
+          rateLimitEnabled: true,
+          rateLimitWindowMs: 60000,
+          rateLimitAuthMax: 20,
+          rateLimitAdminMax: 6,
+          rateLimitApiMax: 240,
+          sessionCookieSameSite: 'lax',
+          sessionCookieSecure: 'auto',
+          sessionCookieMaxAgeMs: 1209600000,
+          lockdownEnabled: false,
+        },
       })
       runtimeAllowedOrigins = [...created.allowedOrigins]
       runtimeCspEnabled = created.cspEnabled
+      runtimeRateLimitEnabled = created.rateLimitEnabled
+      runtimeRateLimitWindowMs = created.rateLimitWindowMs
+      runtimeRateLimitAuthMax = created.rateLimitAuthMax
+      runtimeRateLimitAdminMax = created.rateLimitAdminMax
+      runtimeRateLimitApiMax = created.rateLimitApiMax
+      runtimeSessionCookieSameSite = created.sessionCookieSameSite
+      runtimeSessionCookieSecure = created.sessionCookieSecure
+      runtimeSessionCookieMaxAgeMs = created.sessionCookieMaxAgeMs
+      runtimeLockdownEnabled = created.lockdownEnabled
       return
     }
 
     runtimeAllowedOrigins = Array.isArray(row.allowedOrigins) ? row.allowedOrigins.filter(Boolean) : []
     runtimeCspEnabled = !!row.cspEnabled
+    runtimeRateLimitEnabled = !!row.rateLimitEnabled
+    runtimeRateLimitWindowMs = Number(row.rateLimitWindowMs) || 60000
+    runtimeRateLimitAuthMax = Number(row.rateLimitAuthMax) || 20
+    runtimeRateLimitAdminMax = Number(row.rateLimitAdminMax) || 6
+    runtimeRateLimitApiMax = Number(row.rateLimitApiMax) || 240
+    runtimeSessionCookieSameSite = row.sessionCookieSameSite || 'lax'
+    runtimeSessionCookieSecure = row.sessionCookieSecure || 'auto'
+    runtimeSessionCookieMaxAgeMs = Number(row.sessionCookieMaxAgeMs) || 1209600000
+    runtimeLockdownEnabled = !!row.lockdownEnabled
 
     // If DB is still empty but env has values, seed it once (helps first deploy)
     if (runtimeAllowedOrigins.length === 0 && envAllowedOrigins.length) {
       const updated = await prisma.securityConfig.update({
         where: { id: 'default' },
-        data: { allowedOrigins: envAllowedOrigins, cspEnabled: envCspEnabled },
+        data: {
+          allowedOrigins: envAllowedOrigins,
+          cspEnabled: envCspEnabled,
+          rateLimitEnabled: true,
+          rateLimitWindowMs: 60000,
+          rateLimitAuthMax: 20,
+          rateLimitAdminMax: 6,
+          rateLimitApiMax: 240,
+          sessionCookieSameSite: 'lax',
+          sessionCookieSecure: 'auto',
+          sessionCookieMaxAgeMs: 1209600000,
+          lockdownEnabled: false,
+        },
       })
       runtimeAllowedOrigins = [...updated.allowedOrigins]
       runtimeCspEnabled = updated.cspEnabled
+      runtimeRateLimitEnabled = updated.rateLimitEnabled
+      runtimeRateLimitWindowMs = updated.rateLimitWindowMs
+      runtimeRateLimitAuthMax = updated.rateLimitAuthMax
+      runtimeRateLimitAdminMax = updated.rateLimitAdminMax
+      runtimeRateLimitApiMax = updated.rateLimitApiMax
+      runtimeSessionCookieSameSite = updated.sessionCookieSameSite
+      runtimeSessionCookieSecure = updated.sessionCookieSecure
+      runtimeSessionCookieMaxAgeMs = updated.sessionCookieMaxAgeMs
+      runtimeLockdownEnabled = updated.lockdownEnabled
     }
   } catch {
     // fall back to env
     runtimeAllowedOrigins = [...envAllowedOrigins]
     runtimeCspEnabled = envCspEnabled
+    runtimeRateLimitEnabled = true
+    runtimeRateLimitWindowMs = 60000
+    runtimeRateLimitAuthMax = 20
+    runtimeRateLimitAdminMax = 6
+    runtimeRateLimitApiMax = 240
+    runtimeSessionCookieSameSite = 'lax'
+    runtimeSessionCookieSecure = 'auto'
+    runtimeSessionCookieMaxAgeMs = 1209600000
+    runtimeLockdownEnabled = false
   }
 }
 
@@ -116,26 +188,41 @@ app.use((req, res, next) => {
   next()
 })
 
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-})
+// Rate limiters (will be recreated if runtime config changes)
+function createAuthLimiter() {
+  return rateLimit({
+    windowMs: runtimeRateLimitWindowMs,
+    max: runtimeRateLimitAuthMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+}
+function createAdminLoginLimiter() {
+  return rateLimit({
+    windowMs: runtimeRateLimitWindowMs,
+    max: runtimeRateLimitAdminMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+}
+function createApiLimiter() {
+  return rateLimit({
+    windowMs: runtimeRateLimitWindowMs,
+    max: runtimeRateLimitApiMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+}
+let authLimiter = createAuthLimiter()
+let adminLoginLimiter = createAdminLoginLimiter()
+let apiLimiter = createApiLimiter()
 
-const adminLoginLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 6,
-  standardHeaders: true,
-  legacyHeaders: false,
-})
-
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 240,
-  standardHeaders: true,
-  legacyHeaders: false,
-})
+// Helper to reload limiters when config changes
+function reloadLimiters() {
+  authLimiter = createAuthLimiter()
+  adminLoginLimiter = createAdminLoginLimiter()
+  apiLimiter = createApiLimiter()
+}
 
 app.use('/api', apiLimiter)
 
@@ -155,13 +242,33 @@ const sessionMiddleware = session({
   store: redisStore,
   cookie: {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: isProd ? 'auto' : false,
-    maxAge: 1000 * 60 * 60 * 24 * 14,
+    sameSite: runtimeSessionCookieSameSite,
+    secure: runtimeSessionCookieSecure === 'auto' ? (isProd ? 'auto' : false) : runtimeSessionCookieSecure === 'true',
+    maxAge: runtimeSessionCookieMaxAgeMs,
   },
 })
 
 app.use(sessionMiddleware)
+
+// Equinox lockdown middleware (must be after session)
+app.use((req, res, next) => {
+  if (!runtimeLockdownEnabled) return next()
+  const path = req.path
+  const method = req.method
+  const isAdmin = req.session?.isAdmin === true
+  // Allow health, admin unlock, and admin login even in lockdown
+  if (
+    (path === '/api/health' && method === 'GET') ||
+    (path === '/api/admin/unlock' && method === 'POST') ||
+    (path === '/api/admin/login' && method === 'POST')
+  ) {
+    return next()
+  }
+  // Allow any request from an admin session
+  if (isAdmin) return next()
+  // Block everything else
+  res.status(503).json({ ok: false, error: 'site_in_maintenance' })
+})
 
 const io = new SocketIOServer(httpServer, {
   cors: {
@@ -1015,6 +1122,15 @@ app.get('/api/admin/security', requireAuth, requireAdmin, async (req, res) => {
       isProd,
       cspEnabled: runtimeCspEnabled,
       allowedOrigins: runtimeAllowedOrigins,
+      rateLimitEnabled: runtimeRateLimitEnabled,
+      rateLimitWindowMs: runtimeRateLimitWindowMs,
+      rateLimitAuthMax: runtimeRateLimitAuthMax,
+      rateLimitAdminMax: runtimeRateLimitAdminMax,
+      rateLimitApiMax: runtimeRateLimitApiMax,
+      sessionCookieSameSite: runtimeSessionCookieSameSite,
+      sessionCookieSecure: runtimeSessionCookieSecure,
+      sessionCookieMaxAgeMs: runtimeSessionCookieMaxAgeMs,
+      lockdownEnabled: runtimeLockdownEnabled,
     },
   })
 })
@@ -1024,6 +1140,15 @@ app.patch('/api/admin/security', requireAuth, requireAdmin, async (req, res) => 
     .object({
       allowedOrigins: z.array(z.string().min(1).max(300)).max(100).optional(),
       cspEnabled: z.boolean().optional(),
+      rateLimitEnabled: z.boolean().optional(),
+      rateLimitWindowMs: z.number().int().min(1000).max(600000).optional(),
+      rateLimitAuthMax: z.number().int().min(1).max(1000).optional(),
+      rateLimitAdminMax: z.number().int().min(1).max(100).optional(),
+      rateLimitApiMax: z.number().int().min(1).max(10000).optional(),
+      sessionCookieSameSite: z.enum(['lax', 'strict', 'none']).optional(),
+      sessionCookieSecure: z.enum(['auto', 'true', 'false']).optional(),
+      sessionCookieMaxAgeMs: z.number().int().min(1000).max(1209600000).optional(),
+      lockdownEnabled: z.boolean().optional(),
     })
     .safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
@@ -1036,23 +1161,59 @@ app.patch('/api/admin/security', requireAuth, requireAdmin, async (req, res) => 
       .slice(0, 100)
     data.allowedOrigins = cleaned
   }
-  if (typeof parsed.data.cspEnabled === 'boolean') {
-    data.cspEnabled = parsed.data.cspEnabled
-  }
+  if (typeof parsed.data.cspEnabled === 'boolean') data.cspEnabled = parsed.data.cspEnabled
+  if (typeof parsed.data.rateLimitEnabled === 'boolean') data.rateLimitEnabled = parsed.data.rateLimitEnabled
+  if (typeof parsed.data.rateLimitWindowMs === 'number') data.rateLimitWindowMs = parsed.data.rateLimitWindowMs
+  if (typeof parsed.data.rateLimitAuthMax === 'number') data.rateLimitAuthMax = parsed.data.rateLimitAuthMax
+  if (typeof parsed.data.rateLimitAdminMax === 'number') data.rateLimitAdminMax = parsed.data.rateLimitAdminMax
+  if (typeof parsed.data.rateLimitApiMax === 'number') data.rateLimitApiMax = parsed.data.rateLimitApiMax
+  if (typeof parsed.data.sessionCookieSameSite === 'string') data.sessionCookieSameSite = parsed.data.sessionCookieSameSite
+  if (typeof parsed.data.sessionCookieSecure === 'string') data.sessionCookieSecure = parsed.data.sessionCookieSecure
+  if (typeof parsed.data.sessionCookieMaxAgeMs === 'number') data.sessionCookieMaxAgeMs = parsed.data.sessionCookieMaxAgeMs
+  if (typeof parsed.data.lockdownEnabled === 'boolean') data.lockdownEnabled = parsed.data.lockdownEnabled
+
   if (!Object.keys(data).length) return res.status(400).json({ ok: false, error: 'invalid_payload' })
 
   const updated = await prisma.securityConfig.upsert({
     where: { id: 'default' },
-    create: { id: 'default', allowedOrigins: data.allowedOrigins || [], cspEnabled: data.cspEnabled ?? true },
+    create: {
+      id: 'default',
+      allowedOrigins: data.allowedOrigins || [],
+      cspEnabled: data.cspEnabled ?? true,
+      rateLimitEnabled: data.rateLimitEnabled ?? true,
+      rateLimitWindowMs: data.rateLimitWindowMs ?? 60000,
+      rateLimitAuthMax: data.rateLimitAuthMax ?? 20,
+      rateLimitAdminMax: data.rateLimitAdminMax ?? 6,
+      rateLimitApiMax: data.rateLimitApiMax ?? 240,
+      sessionCookieSameSite: data.sessionCookieSameSite ?? 'lax',
+      sessionCookieSecure: data.sessionCookieSecure ?? 'auto',
+      sessionCookieMaxAgeMs: data.sessionCookieMaxAgeMs ?? 1209600000,
+      lockdownEnabled: data.lockdownEnabled ?? false,
+    },
     update: data,
   })
 
+  // Apply runtime changes
   runtimeAllowedOrigins = [...updated.allowedOrigins]
   runtimeCspEnabled = !!updated.cspEnabled
+  runtimeRateLimitEnabled = !!updated.rateLimitEnabled
+  runtimeRateLimitWindowMs = Number(updated.rateLimitWindowMs) || 60000
+  runtimeRateLimitAuthMax = Number(updated.rateLimitAuthMax) || 20
+  runtimeRateLimitAdminMax = Number(updated.rateLimitAdminMax) || 6
+  runtimeRateLimitApiMax = Number(updated.rateLimitApiMax) || 240
+  runtimeSessionCookieSameSite = updated.sessionCookieSameSite || 'lax'
+  runtimeSessionCookieSecure = updated.sessionCookieSecure || 'auto'
+  runtimeSessionCookieMaxAgeMs = Number(updated.sessionCookieMaxAgeMs) || 1209600000
+  runtimeLockdownEnabled = !!updated.lockdownEnabled
+
+  // Reload rate limiters if settings changed
+  reloadLimiters()
 
   await audit('admin.security_update', req.session.userId, {
     allowedOriginsCount: runtimeAllowedOrigins.length,
     cspEnabled: runtimeCspEnabled,
+    rateLimitEnabled: runtimeRateLimitEnabled,
+    lockdownEnabled: runtimeLockdownEnabled,
     ip: req.ip,
   })
 
@@ -1063,6 +1224,15 @@ app.patch('/api/admin/security', requireAuth, requireAdmin, async (req, res) => 
       isProd,
       cspEnabled: runtimeCspEnabled,
       allowedOrigins: runtimeAllowedOrigins,
+      rateLimitEnabled: runtimeRateLimitEnabled,
+      rateLimitWindowMs: runtimeRateLimitWindowMs,
+      rateLimitAuthMax: runtimeRateLimitAuthMax,
+      rateLimitAdminMax: runtimeRateLimitAdminMax,
+      rateLimitApiMax: runtimeRateLimitApiMax,
+      sessionCookieSameSite: runtimeSessionCookieSameSite,
+      sessionCookieSecure: runtimeSessionCookieSecure,
+      sessionCookieMaxAgeMs: runtimeSessionCookieMaxAgeMs,
+      lockdownEnabled: runtimeLockdownEnabled,
     },
   })
 })

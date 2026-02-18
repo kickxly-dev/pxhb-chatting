@@ -325,12 +325,33 @@ export type AdminSecurity = {
   isProd: boolean
   cspEnabled: boolean
   allowedOrigins: string[]
+  rateLimitEnabled: boolean
+  rateLimitWindowMs: number
+  rateLimitAuthMax: number
+  rateLimitAdminMax: number
+  rateLimitApiMax: number
+  sessionCookieSameSite: 'lax' | 'strict' | 'none'
+  sessionCookieSecure: 'auto' | 'true' | 'false'
+  sessionCookieMaxAgeMs: number
+  lockdownEnabled: boolean
 }
 
 export async function apiAdminSecurity() {
   return apiFetch<{ security: AdminSecurity }>('/api/admin/security')
 }
 
-export async function apiAdminUpdateSecurity(payload: { allowedOrigins?: string[]; cspEnabled?: boolean }) {
+export async function apiAdminUpdateSecurity(payload: {
+  allowedOrigins?: string[]
+  cspEnabled?: boolean
+  rateLimitEnabled?: boolean
+  rateLimitWindowMs?: number
+  rateLimitAuthMax?: number
+  rateLimitAdminMax?: number
+  rateLimitApiMax?: number
+  sessionCookieSameSite?: 'lax' | 'strict' | 'none'
+  sessionCookieSecure?: 'auto' | 'true' | 'false'
+  sessionCookieMaxAgeMs?: number
+  lockdownEnabled?: boolean
+}) {
   return apiFetch<{ security: AdminSecurity }>('/api/admin/security', { method: 'PATCH', body: JSON.stringify(payload) })
 }
