@@ -78,8 +78,6 @@ export type DmMessage = {
   reactions?: ReactionSummary[]
 }
 
-export type SiteConfig = { lockdownEnabled: boolean; lockdownMessage: string }
-
 export async function apiMe() {
   return apiFetch<{ user: User | null }>('/api/auth/me')
 }
@@ -100,10 +98,6 @@ export async function apiRegister(username: string, password: string) {
 
 export async function apiLogout() {
   return apiFetch<Record<string, never>>('/api/auth/logout', { method: 'POST' })
-}
-
-export async function apiSite() {
-  return apiFetch<{ config: SiteConfig }>('/api/site')
 }
 
 export async function apiListServers() {
@@ -317,20 +311,8 @@ export type AdminSecurity = {
   isProd: boolean
   cspEnabled: boolean
   allowedOrigins: string[]
-  lockdown: boolean
 }
 
 export async function apiAdminSecurity() {
   return apiFetch<{ security: AdminSecurity }>('/api/admin/security')
-}
-
-export async function apiAdminSite() {
-  return apiFetch<{ config: SiteConfig }>('/api/admin/site')
-}
-
-export async function apiAdminUpdateSite(payload: { lockdownEnabled?: boolean; lockdownMessage?: string }) {
-  return apiFetch<{ config: SiteConfig }>('/api/admin/site', {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  })
 }

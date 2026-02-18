@@ -85,38 +85,6 @@ app.use((req, res, next) => {
   next()
 })
 
-// Global site lockdown enforcement (non-admins blocked)
-app.use(async (req, res, next) => {
-  try {
-    const path = req.path || ''
-    if (!path.startsWith('/api')) return next()
-
-    // Always allow health and auth/admin routes so admins can log in and disable lockdown
-    if (
-      path === '/api/health' ||
-      path === '/api/site' ||
-      path.startsWith('/api/auth') ||
-      path.startsWith('/api/admin/login') ||
-      path.startsWith('/api/admin/unlock') ||
-      path.startsWith('/api/admin/me')
-    ) {
-      return next()
-    }
-
-    const cfg = await prisma.siteConfig.findUnique({
-      where: { id: 'site' },
-      select: { lockdownEnabled: true, lockdownMessage: true },
-    })
-
-    if (cfg?.lockdownEnabled && !req.session?.isAdmin) {
-      return res.status(423).json({ ok: false, error: 'lockdown', message: cfg.lockdownMessage })
-    }
-  } catch {
-    // fail open
-  }
-  next()
-})
-
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -186,21 +154,6 @@ io.use((socket, next) => {
     if (userId) socket.data.userId = userId
     next()
   })
-})
-
-io.use(async (socket, next) => {
-  try {
-    const isAdmin = socket.request?.session?.isAdmin === true
-    if (isAdmin) return next()
-
-    const cfg = await prisma.siteConfig.findUnique({ where: { id: 'site' }, select: { lockdownEnabled: true } })
-    if (cfg?.lockdownEnabled) {
-      return next(new Error('lockdown'))
-    }
-  } catch {
-    // fail open
-  }
-  next()
 })
 
 io.on('connection', (socket) => {
@@ -962,16 +915,6 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true })
 })
 
-app.get('/api/site', async (req, res) => {
-  const cfg = await prisma.siteConfig.upsert({
-    where: { id: 'site' },
-    create: { id: 'site' },
-    update: {},
-    select: { lockdownEnabled: true, lockdownMessage: true },
-  })
-  res.json({ ok: true, config: cfg })
-})
-
 app.get('/api/presence', requireAuth, async (req, res) => {
   const ids = String(req.query.userIds || '')
     .split(',')
@@ -1041,57 +984,8 @@ app.get('/api/admin/security', requireAuth, requireAdmin, async (req, res) => {
       isProd,
       cspEnabled,
       allowedOrigins,
-      lockdown: await prisma.siteConfig
-        .findUnique({ where: { id: 'site' }, select: { lockdownEnabled: true } })
-        .then((x) => x?.lockdownEnabled === true)
-        .catch(() => false),
     },
   })
-})
-
-app.get('/api/admin/site', requireAuth, requireAdmin, async (req, res) => {
-  const cfg = await prisma.siteConfig.upsert({
-    where: { id: 'site' },
-    create: { id: 'site' },
-    update: {},
-    select: { lockdownEnabled: true, lockdownMessage: true, updatedAt: true, updatedById: true },
-  })
-  res.json({ ok: true, config: cfg })
-})
-
-app.patch('/api/admin/site', requireAdminSession, async (req, res) => {
-  const parsed = z
-    .object({
-      lockdownEnabled: z.boolean().optional(),
-      lockdownMessage: z.string().min(1).max(500).optional(),
-    })
-    .safeParse(req.body)
-
-  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
-
-  const next = await prisma.siteConfig.upsert({
-    where: { id: 'site' },
-    create: {
-      id: 'site',
-      lockdownEnabled: parsed.data.lockdownEnabled ?? false,
-      lockdownMessage: parsed.data.lockdownMessage ?? 'The site is temporarily locked down.',
-      updatedById: req.session?.userId || null,
-    },
-    update: {
-      ...(typeof parsed.data.lockdownEnabled === 'boolean' ? { lockdownEnabled: parsed.data.lockdownEnabled } : {}),
-      ...(typeof parsed.data.lockdownMessage === 'string' ? { lockdownMessage: parsed.data.lockdownMessage } : {}),
-      updatedById: req.session?.userId || null,
-    },
-    select: { lockdownEnabled: true, lockdownMessage: true, updatedAt: true, updatedById: true },
-  })
-
-  await audit(next.lockdownEnabled ? 'site.lockdown_enabled' : 'site.lockdown_disabled', req.session?.userId || null, {
-    message: next.lockdownMessage,
-  })
-
-  io.emit('site:config', { lockdownEnabled: next.lockdownEnabled, lockdownMessage: next.lockdownMessage })
-
-  res.json({ ok: true, config: next })
 })
 
 app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res) => {
