@@ -2017,19 +2017,20 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-white/5 bg-px-panel2/70 px-4 backdrop-blur supports-[backdrop-filter]:bg-px-panel2/55">
-            <div className="flex items-center gap-3">
+          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-gradient-to-b from-px-panel2/90 to-px-panel2/70 px-4 backdrop-blur-lg supports-[backdrop-filter]:bg-px-panel2/60 shadow-sm">
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-white/10 grid place-items-center">
-                  {navMode === 'home' ? <MessageCircle className="h-5 w-5 text-px-text2" /> : <Hash className="h-5 w-5 text-px-text2" />}
+                <div className="relative h-10 w-10 rounded-2xl bg-gradient-to-br from-white/15 to-white/5 grid place-items-center shadow-inner transition-all hover:scale-105">
+                  {navMode === 'home' ? <MessageCircle className="h-5 w-5 text-px-text" /> : <Hash className="h-5 w-5 text-px-text" />}
+                  <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-px-success shadow-lg shadow-px-success/50 animate-pulse" />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-extrabold text-px-text">
+                  <div className="truncate text-base font-bold tracking-tight text-px-text drop-shadow-sm">
                     {navMode === 'home'
                       ? dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'Home'
                       : servers.find((s) => s.id === selectedServerId)?.name || 'Server'}
                   </div>
-                  <div className="truncate text-xs text-px-text2">
+                  <div className="truncate text-xs font-medium text-px-text2/80">
                     {navMode === 'home'
                       ? selectedDmThreadId
                         ? 'Direct Messages'
@@ -2038,12 +2039,18 @@ function App() {
                   </div>
                 </div>
               </div>
-              <div className="hidden lg:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-px-text2">
-                <span>API: {apiHealth}</span>
-                <span className="text-white/15">|</span>
-                <span>Socket: {socketConnected ? 'connected' : 'connecting…'}</span>
-                {socketError ? <span className="text-red-300">({socketError})</span> : null}
-                {socketTarget ? <span className="text-px-text2">@ {socketTarget}</span> : null}
+              <div className="hidden lg:flex items-center gap-3 rounded-2xl border border-white/12 bg-white/8 px-4 py-2 shadow-sm backdrop-blur transition-all hover:bg-white/10">
+                <div className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-red-400 shadow-red-400/50'} animate-pulse`} />
+                  <span className="text-[11px] font-semibold text-px-text2">API</span>
+                </div>
+                <span className="text-white/20">|</span>
+                <div className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full ${socketConnected ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-amber-400 shadow-amber-400/50'} ${socketConnected ? '' : 'animate-pulse'}`} />
+                  <span className="text-[11px] font-semibold text-px-text2">Socket</span>
+                </div>
+                {socketError ? <span className="text-xs font-medium text-red-300 ml-1">({socketError})</span> : null}
+                {socketTarget ? <span className="text-[10px] font-medium text-px-text2/70 ml-1">@ {socketTarget}</span> : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -2415,30 +2422,19 @@ function App() {
 
               <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-3 shadow-soft backdrop-blur">
                 <div className="flex items-end gap-2">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="h-10 w-10 rounded-2xl bg-white/5 text-px-text2 hover:bg-white/10"
-                    disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
-                  >
-                    +
-                  </Button>
                   <div className="flex-1">
                     <Input
-                      className="h-12 w-full border-0 bg-transparent px-1 text-[15px] text-px-text placeholder:text-px-text2 focus-visible:ring-0"
-                      onChange={(e) => {
-                        setMessageText(e.target.value)
-                        emitTyping(true)
-                      }}
+                      className="border-white/12 bg-white/8 text-px-text placeholder:text-px-text2/60 transition-all focus:border-px-brand/40 focus:bg-white/10"
+                      onFocus={() => emitTyping(true)}
                       onBlur={() => emitTyping(false)}
                       value={messageText}
                       placeholder={
                         navMode === 'home'
                           ? selectedDmThreadId
-                            ? 'Write a message…'
-                            : 'Select a DM'
+                            ? 'Message...'
+                            : 'Select a conversation'
                           : selectedChannelId
-                            ? 'Write a message…'
+                            ? 'Message #' + (channels.find((c) => c.id === selectedChannelId)?.name || 'general')
                             : 'Select a channel'
                       }
                       onKeyDown={(e) => {
@@ -2450,10 +2446,10 @@ function App() {
                       }}
                       disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
                     />
-                    <div className="mt-1 px-1 text-[11px] text-px-text2">Enter to send • Shift not supported yet</div>
+                    <div className="mt-1 px-1 text-[10px] font-medium text-px-text2/50">Press Enter to send</div>
                   </div>
                   <Button
-                    className="h-10 rounded-2xl bg-px-brand px-5 font-extrabold text-white hover:bg-px-brand/90"
+                    className="h-10 rounded-2xl bg-gradient-to-r from-px-brand to-px-brand/90 px-6 font-bold text-white shadow-lg shadow-px-brand/30 transition-all hover:scale-105 hover:shadow-px-brand/40 active:scale-[0.98] disabled:opacity-40 disabled:scale-100"
                     onClick={onSendMessage}
                     disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
                   >
@@ -3650,17 +3646,17 @@ function Member({
 }) {
   const dot = status === 'online' ? 'bg-px-success' : status === 'idle' ? 'bg-amber-400' : 'bg-white/20'
   return (
-    <div className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-white/5">
+    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all hover:bg-white/8 hover:shadow-md group">
       <div className="relative">
-        <Avatar className="h-9 w-9">
+        <Avatar className="h-10 w-10 rounded-xl border border-white/10 shadow-sm transition-transform group-hover:scale-105">
           {avatarUrl ? <AvatarImage src={avatarUrl} alt="" className="object-cover" /> : null}
-          <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
+          <AvatarFallback className="font-bold">{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
-        <div className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-px-panel ${dot}`} />
+        <div className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-px-panel ${dot} transition-all group-hover:scale-110`} />
       </div>
       <div className="min-w-0">
-        <div className="truncate font-bold">{name}</div>
-        <div className="truncate text-xs text-px-text2">
+        <div className="truncate font-semibold text-px-text group-hover:text-px-text transition-colors">{name}</div>
+        <div className="truncate text-xs text-px-text2/70">
           {username && username !== name ? `@${username} • ` : ''}
           {status === 'offline' && lastSeenAt ? `last seen ${new Date(lastSeenAt).toLocaleString()}` : status}
         </div>
@@ -3688,8 +3684,8 @@ function ChannelButton({
     <button
       className={
         active
-          ? 'group relative w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-left shadow-soft transition-colors'
-          : 'group relative w-full rounded-xl border border-transparent px-3 py-2 text-left text-px-text2 transition-colors hover:border-white/10 hover:bg-white/5'
+          ? 'group relative w-full rounded-xl border border-px-brand/30 bg-gradient-to-r from-white/10 to-white/5 px-3 py-2.5 text-left shadow-lg shadow-px-brand/10 transition-all hover:scale-[1.02]'
+          : 'group relative w-full rounded-xl border border-white/8 bg-white/4 px-3 py-2.5 text-left text-px-text2/80 transition-all hover:border-white/12 hover:bg-white/8 hover:text-px-text hover:shadow-md'
       }
       type="button"
       onClick={onClick}
@@ -3697,17 +3693,17 @@ function ChannelButton({
       <div
         className={
           active
-            ? 'absolute left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-px-brand'
-            : 'absolute left-1 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-white/10 opacity-0 transition-opacity group-hover:opacity-100'
+            ? 'absolute left-2 top-1/2 h-7 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-px-brand to-px-brand/80 shadow-px-brand/30'
+            : 'absolute left-2 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-white/10 opacity-0 transition-opacity group-hover:opacity-60'
         }
       />
-      <div className="flex items-center gap-2">
-        {leading ? <div className="shrink-0">{leading}</div> : null}
+      <div className="flex items-center gap-3">
+        {leading ? <div className="shrink-0 transition-transform group-hover:scale-110">{leading}</div> : null}
         <div className="min-w-0 flex-1">
-          <div className={active ? 'truncate text-sm font-extrabold text-px-text' : 'truncate text-sm font-semibold text-px-text'}>{children}</div>
-          {subtitle ? <div className={active ? 'truncate text-xs text-px-text2' : 'truncate text-xs text-px-text2'}>{subtitle}</div> : null}
+          <div className={active ? 'truncate text-sm font-bold tracking-wide text-px-text drop-shadow-sm' : 'truncate text-sm font-semibold text-px-text/90'}>{children}</div>
+          {subtitle ? <div className={active ? 'truncate text-xs font-medium text-px-text2/80' : 'truncate text-xs font-medium text-px-text2/60'}>{subtitle}</div> : null}
         </div>
-        {trailing ? <div className="shrink-0">{trailing}</div> : null}
+        {trailing ? <div className="shrink-0 transition-transform group-hover:scale-110">{trailing}</div> : null}
       </div>
     </button>
   )
