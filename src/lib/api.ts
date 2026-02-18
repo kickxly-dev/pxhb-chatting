@@ -328,7 +328,7 @@ export async function apiAdminSite() {
   return apiFetch<{ config: SiteConfig }>('/api/admin/site')
 }
 
-export async function apiAdminUpdateSite(payload: { lockdownEnabled: boolean; lockdownMessage: string }) {
+export async function apiAdminUpdateSite(payload: { lockdownEnabled?: boolean; lockdownMessage?: string }) {
   return apiFetch<{ config: SiteConfig }>('/api/admin/site', {
     method: 'PATCH',
     body: JSON.stringify(payload),

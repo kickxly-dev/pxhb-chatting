@@ -321,7 +321,11 @@ function App() {
     if (!user || !adminAuthed) return
     setAdminSiteBusy(true)
     try {
-      const res = await apiAdminUpdateSite({ lockdownEnabled: adminSiteEnabled, lockdownMessage: adminSiteMessage })
+      const msg = (adminSiteMessage || '').trim()
+      const res = await apiAdminUpdateSite({
+        lockdownEnabled: adminSiteEnabled,
+        ...(msg ? { lockdownMessage: msg } : {}),
+      })
       setSiteConfig(res.config)
       pushToast('Lockdown', res.config.lockdownEnabled ? 'Enabled' : 'Disabled', 'success')
     } catch (e) {
@@ -338,9 +342,9 @@ function App() {
         .catch(() => {
           // ignore
         })
-    }, 5000)
+    }, siteConfig?.lockdownEnabled ? 1000 : 5000)
     return () => window.clearInterval(id)
-  }, [])
+  }, [siteConfig?.lockdownEnabled])
 
   async function onTogglePin(messageId: string, pinned: boolean) {
     if (!user) {
@@ -1551,7 +1555,8 @@ function App() {
                     onClick={async () => {
                       try {
                         if (!adminAuthed) await onAdminUnlockOnly()
-                        await apiAdminUpdateSite({ lockdownEnabled: false, lockdownMessage: adminSiteMessage || 'The site is temporarily locked down.' })
+                        const msg = (adminSiteMessage || '').trim()
+                        await apiAdminUpdateSite({ lockdownEnabled: false, ...(msg ? { lockdownMessage: msg } : {}) })
                         await apiSite().then((r) => setSiteConfig(r.config)).catch(() => {})
                         pushToast('Lockdown', 'Disabled', 'success')
                       } catch (e) {
