@@ -1438,7 +1438,7 @@ function App() {
       <div className="relative grid h-full w-full grid-cols-[72px_280px_1fr_320px] max-lg:grid-cols-[72px_280px_1fr]">
         <aside className="bg-px-rail border-r border-white/5 p-2">
           <div className="flex h-full flex-col items-center gap-2">
-            <div className="h-12 w-12 rounded-2xl bg-[linear-gradient(180deg,rgba(239,68,68,0.95),rgba(239,68,68,0.65))] shadow-soft grid place-items-center font-black ring-1 ring-white/10">
+            <div className="h-12 w-12 rounded-2xl bg-[linear-gradient(180deg,rgba(239,68,68,0.95),rgba(239,68,68,0.65))] shadow-soft grid place-items-center font-black ring-1 ring-white/10 transition-transform will-change-transform hover:scale-[1.03] active:scale-[0.98]">
               PX
             </div>
 
@@ -1446,8 +1446,8 @@ function App() {
               type="button"
               className={
                 navMode === 'home'
-                  ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black transition-colors'
-                  : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black transition-colors hover:bg-white/15'
+                  ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black transition-all hover:bg-white/25 active:scale-[0.98]'
+                  : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black transition-all hover:bg-white/15 active:scale-[0.98]'
               }
               title="Home"
               onClick={() => {
@@ -1464,8 +1464,8 @@ function App() {
                 type="button"
                 className={
                   navMode === 'server' && s.id === selectedServerId
-                    ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black transition-colors'
-                    : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black transition-colors hover:bg-white/15'
+                    ? 'h-12 w-12 rounded-2xl bg-white/20 grid place-items-center text-sm font-black transition-all hover:bg-white/25 active:scale-[0.98]'
+                    : 'h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm font-black transition-all hover:bg-white/15 active:scale-[0.98]'
                 }
                 title={s.name}
                 onClick={() => {
@@ -1480,7 +1480,7 @@ function App() {
             <Button
               variant="secondary"
               size="icon"
-              className="h-12 w-12 rounded-2xl bg-white/10 text-px-text2 hover:bg-white/15"
+              className="h-12 w-12 rounded-2xl bg-white/10 text-px-text2 transition-all hover:bg-white/15 active:scale-[0.98]"
               onClick={() => {
                 if (!user) {
                   setAuthMode('login')
@@ -1493,7 +1493,7 @@ function App() {
               <Plus className="h-5 w-5" />
             </Button>
             <div className="mt-auto grid w-full place-items-center gap-2 pb-1">
-              <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 grid place-items-center text-sm text-px-text2 hover:bg-white/10 transition-colors">
+              <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 grid place-items-center text-sm text-px-text2 hover:bg-white/10 transition-all active:scale-[0.98]">
                 <Settings className="h-5 w-5" />
               </div>
               <div className="text-[10px] font-extrabold tracking-wide text-px-text2">Protected by Equinox V1</div>
@@ -1700,7 +1700,7 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="flex h-14 items-center justify-between border-b border-white/5 px-4">
+          <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-white/5 bg-px-panel2/70 px-4 backdrop-blur supports-[backdrop-filter]:bg-px-panel2/55">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-white/10 grid place-items-center">
@@ -1735,7 +1735,7 @@ function App() {
               </div>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   setPinsOpen(true)
                   if (user) refreshPins()
@@ -1746,7 +1746,7 @@ function App() {
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   setSearchOpen(true)
                   setSearchError(null)
@@ -1758,7 +1758,7 @@ function App() {
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   setAdminOpen(true)
                   setAdminError(null)
@@ -1772,7 +1772,7 @@ function App() {
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   if (!user) {
                     setAuthMode('login')
@@ -1790,7 +1790,7 @@ function App() {
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   setInviteError(null)
                   setInviteCode('')
@@ -1802,7 +1802,7 @@ function App() {
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   const cur = channels.find((c) => c.id === selectedChannelId)
                   setRenameChannelName(cur?.name || '')
@@ -1815,7 +1815,7 @@ function App() {
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
                   setDeleteChannelError(null)
                   setDeleteChannelOpen(true)
@@ -1825,12 +1825,12 @@ function App() {
                 Delete
               </Button>
               {user ? (
-                <Button variant="secondary" className="h-9 bg-white/5 text-px-text2 hover:bg-white/10" onClick={onLogout}>
+                <Button variant="secondary" className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]" onClick={onLogout}>
                   Logout
                 </Button>
               ) : (
                 <Button
-                  className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+                  className="h-9 bg-px-brand text-white transition-all hover:bg-px-brand/90 active:scale-[0.98]"
                   onClick={() => {
                     setAuthMode('login')
                     setAuthOpen(true)
@@ -1850,24 +1850,106 @@ function App() {
                     <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">WELCOME</div>
                     <div className="mt-2 text-2xl font-black text-px-text">Sign in to start chatting</div>
                     <div className="mt-2 text-sm text-px-text2">Your messages, servers, and friends will load after you login.</div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button
+                        className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+                        onClick={() => {
+                          setAuthMode('login')
+                          setAuthOpen(true)
+                        }}
+                      >
+                        Login
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                        onClick={() => {
+                          setAuthMode('register')
+                          setAuthOpen(true)
+                        }}
+                      >
+                        Create account
+                      </Button>
+                    </div>
                   </div>
                 ) : navMode === 'server' && servers.length === 0 ? (
                   <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
                     <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">NO SERVERS</div>
                     <div className="mt-2 text-2xl font-black text-px-text">Create your first server</div>
                     <div className="mt-2 text-sm text-px-text2">Use the + button in the left rail to create a server and invite friends.</div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button
+                        className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+                        onClick={() => {
+                          if (!user) {
+                            setAuthMode('login')
+                            setAuthOpen(true)
+                            return
+                          }
+                          setCreateServerOpen(true)
+                        }}
+                      >
+                        Create server
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                        onClick={() => {
+                          setInviteError(null)
+                          setInviteCode('')
+                          setJoinError(null)
+                          setInviteOpen(true)
+                        }}
+                        disabled={!user}
+                      >
+                        Join with invite
+                      </Button>
+                    </div>
                   </div>
                 ) : navMode === 'server' && !selectedChannelId ? (
                   <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
                     <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">READY</div>
                     <div className="mt-2 text-2xl font-black text-px-text">Pick a channel</div>
                     <div className="mt-2 text-sm text-px-text2">Choose a text channel in the left sidebar to load messages.</div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button
+                        className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+                        onClick={() => {
+                          if (!user) {
+                            setAuthMode('login')
+                            setAuthOpen(true)
+                            return
+                          }
+                          setCreateChannelOpen(true)
+                        }}
+                      >
+                        New channel
+                      </Button>
+                    </div>
                   </div>
                 ) : navMode === 'home' && !selectedDmThreadId ? (
                   <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
                     <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">DIRECT MESSAGES</div>
                     <div className="mt-2 text-2xl font-black text-px-text">Select a DM</div>
                     <div className="mt-2 text-sm text-px-text2">Open a conversation from the left to start chatting.</div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button
+                        className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+                        onClick={() => {
+                          if (!user) {
+                            setAuthMode('login')
+                            setAuthOpen(true)
+                            return
+                          }
+                          setFriendsOpen(true)
+                          setFriendsError(null)
+                          setSendFriendError(null)
+                          refreshFriendsData()
+                        }}
+                      >
+                        Find friends
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
                 {navMode === 'home'
