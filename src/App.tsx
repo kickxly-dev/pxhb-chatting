@@ -248,6 +248,20 @@ function App() {
     return d || u.username
   }
 
+  function friendlyError(e: unknown): string {
+    const raw = e instanceof Error ? e.message : 'unknown_error'
+    const code = raw.split(':')[0]
+    if (code === 'invalid_credentials') return 'Invalid username or password.'
+    if (code === 'username_taken') return 'That username is already taken.'
+    if (code === 'invalid_payload') return 'Please check the form and try again.'
+    if (code === 'unauthorized') return 'Please log in again.'
+    if (code === 'origin_forbidden') return 'Request blocked by origin policy. Check Allowed Origins in Admin.'
+    if (code === 'rate_limited' || code === 'http_429') return 'Too many attempts. Please wait a moment and try again.'
+    if (code === 'bad_response') return 'Server returned an unexpected response.'
+    if (code === 'fetch_failed') return 'Network error. Check your connection.'
+    return raw
+  }
+
   const formatShortTime = useMemo(() => {
     return (iso: string | null) => {
       if (!iso) return ''
@@ -563,23 +577,28 @@ function App() {
   }, [])
 
   async function refreshMeAndServers() {
-    const me = await apiMe()
-    setUser(me.user)
-    if (me.user) {
-      const list = await apiListServers()
-      setServers(list.servers)
-    } else {
-      setServers([])
-    }
+    try {
+      const me = await apiMe()
+      setUser(me.user)
+      if (me.user) {
+        const list = await apiListServers()
+        setServers(list.servers)
+      } else {
+        setServers([])
+      }
 
-    if (me.user) {
-      apiAdminMe()
-        .then((r) => setAdminAuthed(r.admin === true))
-        .catch(() => setAdminAuthed(false))
-    } else {
+      if (me.user) {
+        apiAdminMe()
+          .then((r) => setAdminAuthed(r.admin === true))
+          .catch(() => setAdminAuthed(false))
+      } else {
+        setAdminAuthed(false)
+      }
+    } catch {
+      setUser(null)
+      setServers([])
       setAdminAuthed(false)
     }
-
   }
 
   async function refreshDmThreads() {
@@ -778,7 +797,7 @@ function App() {
       .finally(() => {
         if (!alive) return
         const elapsed = Date.now() - start
-        const minMs = 4500
+        const minMs = 750
         const remaining = Math.max(0, minMs - elapsed)
         t = window.setTimeout(() => {
           if (!alive) return
@@ -1286,55 +1305,107 @@ function App() {
         }
       }}
     >
-      <DialogContent className="border-white/10 bg-px-panel text-px-text">
-        <DialogHeader>
-          <DialogTitle>{authMode === 'login' ? 'Login' : 'Create account'}</DialogTitle>
-          <DialogDescription className="text-px-text2">
-            {authMode === 'login'
-              ? 'Welcome back. Login to access servers and realtime chat.'
-              : 'Pick a username and password. You can change this later.'}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-3">
-          <Input
-            value={authUsername}
-            onChange={(e) => setAuthUsername(e.target.value)}
-            placeholder="Username"
-            className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
-            autoCapitalize="none"
-            autoComplete="username"
-          />
-          <Input
-            value={authPassword}
-            onChange={(e) => setAuthPassword(e.target.value)}
-            placeholder="Password"
-            type="password"
-            className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
-            autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onSubmitAuth()
-            }}
-          />
-          {authError ? <div className="text-sm font-semibold text-red-400">{authError}</div> : null}
+      <DialogContent className="border-white/10 bg-px-panel text-px-text max-w-md">
+        <div className="flex items-start gap-3">
+          <div className="h-12 w-12 shrink-0 rounded-2xl bg-[linear-gradient(180deg,rgba(239,68,68,0.95),rgba(239,68,68,0.65))] shadow-soft grid place-items-center font-black ring-1 ring-white/10">
+            PX
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-lg font-extrabold">PXHB Chatting</div>
+            <div className="truncate text-sm text-px-text2">Secure session • Protected by Equinox</div>
+          </div>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button
-            variant="secondary"
-            className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
-            onClick={() => {
-              setAuthError(null)
-              setAuthMode(authMode === 'login' ? 'register' : 'login')
-            }}
-            disabled={authBusy}
-          >
-            {authMode === 'login' ? 'Create account' : 'Have an account? Login'}
-          </Button>
-          <Button className="h-9 bg-px-brand text-white hover:bg-px-brand/90" onClick={onSubmitAuth} disabled={authBusy}>
-            {authBusy ? 'Please wait…' : authMode === 'login' ? 'Login' : 'Register'}
-          </Button>
-        </DialogFooter>
+        <div className="mt-5 grid gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className={authMode === 'login' ? 'h-9 bg-white/15 text-px-text hover:bg-white/20' : 'h-9 bg-white/5 text-px-text2 hover:bg-white/10'}
+              onClick={() => {
+                setAuthMode('login')
+                setAuthError(null)
+              }}
+              disabled={authBusy}
+            >
+              Login
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className={authMode === 'register' ? 'h-9 bg-white/15 text-px-text hover:bg-white/20' : 'h-9 bg-white/5 text-px-text2 hover:bg-white/10'}
+              onClick={() => {
+                setAuthMode('register')
+                setAuthError(null)
+              }}
+              disabled={authBusy}
+            >
+              Register
+            </Button>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <DialogHeader>
+              <DialogTitle>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</DialogTitle>
+              <DialogDescription className="text-px-text2">
+                {authMode === 'login'
+                  ? 'Sign in to join servers and continue your conversations.'
+                  : 'Choose a username and password to start chatting.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-4 grid gap-3">
+              <div className="grid gap-1">
+                <div className="text-xs font-extrabold tracking-wide text-px-text2">USERNAME</div>
+                <Input
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  placeholder="yourname"
+                  className="border-white/10 bg-black/20 text-px-text placeholder:text-px-text2"
+                  autoCapitalize="none"
+                  autoComplete="username"
+                />
+              </div>
+              <div className="grid gap-1">
+                <div className="text-xs font-extrabold tracking-wide text-px-text2">PASSWORD</div>
+                <Input
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder={authMode === 'login' ? '••••••••' : 'min 6 characters'}
+                  type="password"
+                  className="border-white/10 bg-black/20 text-px-text placeholder:text-px-text2"
+                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') onSubmitAuth()
+                  }}
+                />
+              </div>
+              {authError ? (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-300">
+                  {authError}
+                </div>
+              ) : null}
+            </div>
+
+            <DialogFooter className="mt-4 gap-2">
+              <Button
+                variant="secondary"
+                className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => setAuthOpen(false)}
+                disabled={authBusy}
+              >
+                Cancel
+              </Button>
+              <Button className="h-9 bg-px-brand text-white hover:bg-px-brand/90" onClick={onSubmitAuth} disabled={authBusy}>
+                {authBusy ? 'Signing in…' : authMode === 'login' ? 'Login' : 'Create account'}
+              </Button>
+            </DialogFooter>
+          </div>
+
+          <div className="text-center text-xs text-px-text2">
+            By continuing, you agree to the site security rules enforced by Equinox.
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -1416,20 +1487,22 @@ function App() {
     setAuthBusy(true)
     setAuthError(null)
     try {
+      const uname = authUsername.trim().toLowerCase()
       if (authMode === 'login') {
-        const res = await apiLogin(authUsername, authPassword)
+        const res = await apiLogin(uname, authPassword)
         setUser(res.user)
       } else {
-        const res = await apiRegister(authUsername, authPassword)
+        const res = await apiRegister(uname, authPassword)
         setUser(res.user)
       }
       setAuthOpen(false)
       setAuthPassword('')
       await refreshMeAndServers()
-      pushToast('Welcome', `Signed in as ${authUsername.trim().toLowerCase()}`, 'success')
+      pushToast('Welcome', `Signed in as ${uname}`, 'success')
     } catch (e) {
-      setAuthError(e instanceof Error ? e.message : 'auth_failed')
-      pushToast('Auth failed', e instanceof Error ? e.message : 'auth_failed', 'error')
+      const msg = friendlyError(e)
+      setAuthError(msg)
+      pushToast('Auth failed', msg, 'error')
     } finally {
       setAuthBusy(false)
     }
@@ -1518,9 +1591,14 @@ function App() {
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center gap-3">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-px-brand" />
-                <div className="text-sm font-semibold text-px-text2">Loading secure session…</div>
+              <div className="mt-6">
+                <div className="flex items-center gap-3">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-px-brand" />
+                  <div className="text-sm font-semibold text-px-text2">Establishing session…</div>
+                </div>
+                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                  <div className="h-full w-1/2 animate-pulse rounded-full bg-px-brand/60" />
+                </div>
               </div>
 
               <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-px-text2">
