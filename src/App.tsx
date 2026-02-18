@@ -171,6 +171,7 @@ function App() {
   const [searchBusy, setSearchBusy] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<(ApiMessage | DmMessage)[]>([])
+  const [searchFilters, setSearchFilters] = useState({ author: '', hasReactions: false, isPinned: false })
 
   const [createServerOpen, setCreateServerOpen] = useState(false)
   const [newServerName, setNewServerName] = useState('')
@@ -983,7 +984,6 @@ function App() {
     })
     s.on('disconnect', () => setSocketConnected(false))
     s.on('connect_error', (err) => {
-      setSocketConnected(false)
       setSocketError(err?.message || 'connect_error')
     })
 
@@ -1180,15 +1180,13 @@ function App() {
 
   const typingLabel = useMemo(() => {
     if (navMode === 'server' && selectedChannelId) {
-      const room = channelTypers[selectedChannelId] || {}
-      const names = Object.values(room)
-        .sort((a, b) => b.at - a.at)
-        .map((x) => x.username)
-        .slice(0, 3)
-      if (!names.length) return ''
-      if (names.length === 1) return `${names[0]} is typing…`
-      if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
-      return `${names[0]}, ${names[1]} and others are typing…`
+      const typing = Object.entries(channelTypers[selectedChannelId] || {})
+        .filter(([_, v]) => v)
+        .map(([username]) => username)
+      if (typing.length === 0) return ''
+      if (typing.length === 1) return `${typing[0]} is typing...`
+      if (typing.length === 2) return `${typing[0]} and ${typing[1]} are typing...`
+      return `${typing.slice(0, -1).join(', ')} and ${typing[typing.length - 1]} are typing...`
     }
     if (navMode === 'home' && selectedDmThreadId) {
       const room = dmTypers[selectedDmThreadId] || {}
@@ -2513,40 +2511,105 @@ function App() {
           }
         }}
       >
-        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-3xl">
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-4xl">
           <DialogHeader>
             <DialogTitle>Search</DialogTitle>
             <DialogDescription>{navMode === 'server' ? 'Search this channel' : 'Search this DM'} • Protected by Equinox V1</DialogDescription>
           </DialogHeader>
 
-          <div className="flex gap-2">
-            <Input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages…" />
-            <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={runSearch} disabled={searchBusy}>
-              Go
-            </Button>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Search messages (Ctrl+K)"
+                className="flex-1 border-white/12 bg-white/8 text-px-text placeholder:text-px-text2/60 transition-all focus:border-px-brand/40 focus:bg-white/10"
+                autoFocus
+              />
+              <Button className="bg-gradient-to-r from-px-brand to-px-brand/90 text-white hover:from-px-brand/90 hover:to-px-brand shadow-lg shadow-px-brand/30 transition-all hover:scale-105" onClick={runSearch} disabled={searchBusy}>
+                {searchBusy ? 'Searching…' : 'Search'}
+              </Button>
+            </div>
+
+            <div className="flex gap-2">
+              <select
+                value={searchFilters.author}
+                onChange={(e) => setSearchFilters((f) => ({ ...f, author: e.target.value }))}
+                className="h-9 rounded-xl border border-white/10 bg-white/8 px-3 text-sm text-px-text transition-all focus:border-px-brand/40 focus:bg-white/10"
+              >
+                <option value="">All authors</option>
+                {navMode === 'server' ? members.map((m) => <option key={m.id}>{displayNameFor(m)}</option>) : dmThreads.map((t) => <option key={t.id}>{t.otherUser.username}</option>)}
+              </select>
+              <Button
+                variant={searchFilters.hasReactions ? 'default' : 'secondary'}
+                size="sm"
+                className="h-9 px-3 rounded-xl border border-white/10 bg-white/8 text-px-text transition-all hover:border-px-brand/40 hover:bg-white/10"
+                onClick={() => setSearchFilters((f) => ({ ...f, hasReactions: !f.hasReactions }))}
+              >
+                <span className={searchFilters.hasReactions ? 'text-px-brand' : ''}>Reactions</span>
+              </Button>
+              <Button
+                variant={searchFilters.isPinned ? 'default' : 'secondary'}
+                size="sm"
+                className="h-9 px-3 rounded-xl border border-white/10 bg-white/8 text-px-text transition-all hover:border-px-brand/40 hover:bg-white/10"
+                onClick={() => setSearchFilters((f) => ({ ...f, isPinned: !f.isPinned }))}
+              >
+                <span className={searchFilters.isPinned ? 'text-px-brand' : ''}>Pinned</span>
+              </Button>
+            </div>
           </div>
-          {searchError ? <div className="text-sm text-red-400">{searchError}</div> : null}
-          {searchBusy ? <div className="text-sm text-px-text2">Searching…</div> : null}
+
+          {searchError ? <div className="text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">{searchError}</div> : null}
+          {searchBusy ? <div className="flex items-center justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-2 border-px-brand border-t-transparent animate-spin"></div></div> : null}
           {!searchBusy && !searchError && searchQ.trim() && searchResults.length === 0 ? (
-            <div className="text-sm text-px-text2">No results.</div>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-sm font-semibold text-px-text">No results</div>
+              <div className="mt-1 text-sm text-px-text2">Try adjusting your search or filters</div>
+            </div>
           ) : null}
 
           <div className="max-h-[50vh] overflow-auto rounded-xl border border-white/10 bg-white/5 p-3">
             <div className="space-y-2">
-              {searchResults.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left hover:bg-white/10"
-                  onClick={() => setSearchOpen(false)}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="truncate text-sm font-extrabold">{m.author.username}</div>
-                    <div className="shrink-0 text-xs text-px-text2">{new Date(m.createdAt).toLocaleString()}</div>
-                  </div>
-                  <div className="mt-1 truncate text-sm text-px-text2">{m.deletedAt ? 'Message deleted' : m.content}</div>
-                </button>
-              ))}
+              {searchResults.map((m) => {
+                  const isDm = 'threadId' in m
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-left transition-all hover:border-px-brand/20 hover:bg-white/8 hover:shadow-sm group"
+                      onClick={() => {
+                        setSearchOpen(false)
+                        if (isDm && m.threadId !== selectedDmThreadId) {
+                          openDmThreadFromList(dmThreads.find((t) => t.id === m.threadId)!)
+                        } else if (!isDm && m.channelId !== selectedChannelId) {
+                          setSelectedChannelId(m.channelId)
+                        }
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Avatar className="h-8 w-8 rounded-lg border border-white/10 shadow-sm">
+                          {m.author.avatarUrl ? <AvatarImage src={m.author.avatarUrl} alt="" className="object-cover" /> : null}
+                          <AvatarFallback className="text-xs font-bold">{displayNameFor(m.author).slice(0, 1).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-px-text group-hover:text-px-text transition-colors">{m.author.username}</div>
+                          <div className="truncate text-xs text-px-text2 mt-1">{m.deletedAt ? 'Message deleted' : m.content}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] text-px-text2">{new Date(m.createdAt).toLocaleString()}</span>
+                            {m.reactions && Object.keys(m.reactions).length > 0 && (
+                              <div className="flex gap-1">
+                                {Object.entries(m.reactions).map(([emoji, users]) => (
+                                  <span key={emoji} className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-xs">{emoji} {Array.isArray(users) ? users.length : 0}</span>
+                                ))}
+                              </div>
+                            )}
+                            {m.pinnedAt && <span className="text-[10px] text-px-brand">📌</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
             </div>
           </div>
         </DialogContent>
@@ -3648,14 +3711,14 @@ function Member({
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all hover:bg-white/8 hover:shadow-md group">
       <div className="relative">
-        <Avatar className="h-10 w-10 rounded-xl border border-white/10 shadow-sm transition-transform group-hover:scale-105">
+        <Avatar className="h-10 w-10 rounded-xl border border-white/10 shadow-sm transition-transform group-hover:scale-105 cursor-pointer">
           {avatarUrl ? <AvatarImage src={avatarUrl} alt="" className="object-cover" /> : null}
           <AvatarFallback className="font-bold">{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
         <div className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-px-panel ${dot} transition-all group-hover:scale-110`} />
       </div>
       <div className="min-w-0">
-        <div className="truncate font-semibold text-px-text group-hover:text-px-text transition-colors">{name}</div>
+        <div className="truncate font-semibold text-px-text group-hover:text-px-text transition-colors cursor-pointer">{name}</div>
         <div className="truncate text-xs text-px-text2/70">
           {username && username !== name ? `@${username} • ` : ''}
           {status === 'offline' && lastSeenAt ? `last seen ${new Date(lastSeenAt).toLocaleString()}` : status}
