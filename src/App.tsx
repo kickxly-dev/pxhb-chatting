@@ -2068,31 +2068,31 @@ function App() {
               ) : (
                 channelsLoading ? (
                   <div className="space-y-2">
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <div key={i} className="h-10 w-full animate-pulse rounded-xl bg-white/5" />
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-11 w-full animate-pulse rounded-xl bg-white/4 border border-white/8"></div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs font-extrabold tracking-wide text-px-text2">TEXT CHANNELS</div>
-                    <div className="mt-2 text-sm font-semibold text-px-text">No channels yet</div>
-                    <div className="mt-1 text-sm text-px-text2">Create a channel to start chatting.</div>
-                    <div className="mt-3">
-                      <Button
-                        variant="secondary"
-                        className="h-9 w-full bg-white/5 text-px-text2 hover:bg-white/10"
-                        onClick={() => {
-                          if (!user) {
-                            setAuthMode('login')
-                            setAuthOpen(true)
-                            return
-                          }
-                          setCreateChannelOpen(true)
-                        }}
-                      >
-                        New channel
-                      </Button>
+                  <div className="rounded-xl border border-white/8 bg-white/4 p-6 text-center">
+                    <div className="mx-auto h-12 w-12 rounded-xl bg-white/5 flex items-center justify-center mb-4">
+                      <Hash className="h-6 w-6 text-px-text2/40" />
                     </div>
+                    <div className="text-sm font-semibold text-px-text mb-2">No channels yet</div>
+                    <div className="text-xs text-px-text2/70 mb-4">Create your first channel to start chatting</div>
+                    <Button
+                      variant="secondary"
+                      className="h-9 bg-white/6 border border-white/8 text-px-text hover:bg-white/10 hover:border-white/12 transition-all"
+                      onClick={() => {
+                        if (!user) {
+                          setAuthMode('login')
+                          setAuthOpen(true)
+                          return
+                        }
+                        setCreateChannelOpen(true)
+                      }}
+                    >
+                      Create Channel
+                    </Button>
                   </div>
                 )
               )}
@@ -2150,20 +2150,20 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-gradient-to-b from-px-panel2/90 to-px-panel2/70 px-2 lg:px-4 backdrop-blur-lg supports-[backdrop-filter]:bg-px-panel2/60 shadow-sm">
-            <div className="flex items-center gap-2 lg:gap-4 flex-1 min-w-0">
+          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-gradient-to-b from-px-panel2/95 to-px-panel2/80 px-3 lg:px-6 backdrop-blur-xl supports-[backdrop-filter]:bg-px-panel2/70 shadow-lg">
+            <div className="flex items-center gap-3 lg:gap-4 flex-1 min-w-0">
               <div className="flex items-center gap-2 lg:gap-3">
-                <div className="relative h-8 lg:h-10 w-8 lg:w-10 rounded-2xl bg-gradient-to-br from-white/15 to-white/5 grid place-items-center shadow-inner transition-all hover:scale-105">
+                <div className="relative h-9 lg:h-10 w-9 lg:w-10 rounded-xl bg-gradient-to-br from-white/12 to-white/4 grid place-items-center shadow-sm border border-white/8 transition-all hover:scale-105">
                   {navMode === 'home' ? <MessageCircle className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" /> : <Hash className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" />}
-                  <div className="absolute -bottom-1 -right-1 h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-px-success shadow-lg shadow-px-success/50 animate-pulse" />
+                  <div className="absolute -bottom-0.5 -right-0.5 h-2.5 lg:h-3 w-2.5 lg:w-3 rounded-full bg-px-success shadow-lg shadow-px-success/50 animate-pulse" />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-sm lg:text-base font-bold tracking-tight text-px-text drop-shadow-sm">
+                  <div className="truncate text-sm lg:text-base font-semibold tracking-tight text-px-text">
                     {navMode === 'home'
                       ? dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'Home'
                       : servers.find((s) => s.id === selectedServerId)?.name || 'Server'}
                   </div>
-                  <div className="truncate text-xs lg:text-xs font-medium text-px-text2/80 hidden sm:block">
+                  <div className="truncate text-xs lg:text-xs font-medium text-px-text2/70 hidden sm:block">
                     {navMode === 'home'
                       ? selectedDmThreadId
                         ? 'Direct Messages'
@@ -2172,74 +2172,76 @@ function App() {
                   </div>
                 </div>
               </div>
-              <div className="hidden lg:flex items-center gap-3 rounded-2xl border border-white/12 bg-white/8 px-4 py-2 shadow-sm backdrop-blur transition-all hover:bg-white/10">
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-red-400 shadow-red-400/50'} animate-pulse`} />
-                  <span className="text-[11px] font-semibold text-px-text2">API</span>
+              <div className="hidden lg:flex items-center gap-2 rounded-xl border border-white/8 bg-white/4 px-3 py-1.5 shadow-sm">
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-1.5 w-1.5 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-red-400 shadow-red-400/50'} animate-pulse`} />
+                  <span className="text-[10px] font-medium text-px-text2">API</span>
                 </div>
-                <span className="text-white/20">|</span>
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${socketConnected ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-amber-400 shadow-amber-400/50'} ${socketConnected ? '' : 'animate-pulse'}`} />
-                  <span className="text-[11px] font-semibold text-px-text2">Socket</span>
+                <span className="text-white/15 text-xs">|</span>
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-1.5 w-1.5 rounded-full ${socketConnected ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-amber-400 shadow-amber-400/50'} ${socketConnected ? '' : 'animate-pulse'}`} />
+                  <span className="text-[10px] font-medium text-px-text2">Socket</span>
                 </div>
                 {socketError ? <span className="text-xs font-medium text-red-300 ml-1">({socketError})</span> : null}
-                {socketTarget ? <span className="text-[10px] font-medium text-px-text2/70 ml-1">@ {socketTarget}</span> : null}
+                {socketTarget ? <span className="text-[9px] font-medium text-px-text2/60 ml-1">@ {socketTarget}</span> : null}
               </div>
             </div>
-            <div className="flex items-center gap-1 lg:gap-2">
-              <div className="hidden md:flex items-center rounded-full border border-white/10 bg-white/5 px-2 lg:px-3 py-1 text-[10px] font-extrabold tracking-wide text-px-text2">
-                <span className="hidden lg:inline">Protected by Equinox V1</span>
-                <span className="lg:hidden">Equinox</span>
+            <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center rounded-lg border border-white/8 bg-white/4 px-2.5 py-1 text-[9px] font-semibold text-px-text2/80">
+                <span className="hidden lg:inline">Equinox V1</span>
+                <span className="lg:hidden">E1</span>
               </div>
-              <Button
-                variant="secondary"
-                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
-                onClick={() => {
-                  setPinsOpen(true)
-                  if (user) refreshPins()
-                }}
-                disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
-              >
-                <span className="hidden lg:inline">Pins</span>
-                <Pin className="h-4 w-4 lg:hidden" />
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
-                onClick={() => {
-                  setSearchOpen(true)
-                  setSearchError(null)
-                  setSearchResults([])
-                }}
-                disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
-              >
-                <span className="hidden lg:inline">Search</span>
-                <Hash className="h-4 w-4 lg:hidden" />
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
-                onClick={() => {
-                  setAdminOpen(true)
-                  setAdminError(null)
-                  if (user && adminAuthed) {
-                    refreshAdminData()
-                  }
-                }}
-                disabled={!user}
-              >
-                <span className="hidden lg:inline">Admin</span>
-                <Settings className="h-4 w-4 lg:hidden" />
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
-                onClick={() => setNotificationsOpen(true)}
-                disabled={!user}
-              >
-                <span className="hidden lg:inline">Notifications</span>
-                <MessageCircle className="h-4 w-4 lg:hidden" />
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="secondary"
+                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  onClick={() => {
+                    setPinsOpen(true)
+                    if (user) refreshPins()
+                  }}
+                  disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
+                >
+                  <Pin className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                  <span className="hidden lg:inline ml-1.5">Pins</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  onClick={() => {
+                    setSearchOpen(true)
+                    setSearchError(null)
+                    setSearchResults([])
+                  }}
+                  disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
+                >
+                  <Hash className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                  <span className="hidden lg:inline ml-1.5">Search</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  onClick={() => {
+                    setAdminOpen(true)
+                    setAdminError(null)
+                    if (user && adminAuthed) {
+                      refreshAdminData()
+                    }
+                  }}
+                  disabled={!user}
+                >
+                  <Settings className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                  <span className="hidden lg:inline ml-1.5">Admin</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  onClick={() => setNotificationsOpen(true)}
+                  disabled={!user}
+                >
+                  <MessageCircle className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                  <span className="hidden lg:inline ml-1.5">Alerts</span>
+                </Button>
+              </div>
               <Button
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
@@ -2541,28 +2543,31 @@ function App() {
                         )
                       })
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <div className="text-sm font-semibold text-px-text">No messages in this channel</div>
-                        <div className="mt-1 text-sm text-px-text2">Be the first to say something!</div>
+                      <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in duration-500">
+                        <div className="h-16 w-16 rounded-2xl bg-white/4 flex items-center justify-center mb-6 border border-white/8">
+                          <MessageCircle className="h-8 w-8 text-px-text2/30" />
+                        </div>
+                        <div className="text-lg font-semibold text-px-text mb-2">No messages in this channel</div>
+                        <div className="text-sm text-px-text2/70 max-w-md">Be the first to say something! Start a conversation with your team.</div>
                       </div>
                     )}
               </div>
             </div>
           </ScrollArea>
 
-          <footer className="border-t border-white/5 p-4">
+          <footer className="border-t border-white/8 bg-gradient-to-t from-px-panel2/95 to-px-panel2/80 p-4 backdrop-blur-xl">
             <div className="mx-auto flex max-w-4xl flex-col gap-3">
-              {typingLabel ? <div className="px-2 text-xs font-extrabold text-px-text2">{typingLabel}</div> : null}
+              {typingLabel ? <div className="px-3 py-1.5 text-xs font-medium text-px-text2/80 bg-white/4 rounded-lg w-fit">{typingLabel}</div> : null}
               {replyingTo ? (
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-extrabold">{replyingTo.who}</div>
-                    <div className="truncate text-xs text-px-text2">{replyingTo.preview}</div>
+                <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/4 px-3 py-2.5 shadow-sm">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold text-px-text">Replying to {replyingTo.who}</div>
+                    <div className="truncate text-xs text-px-text2/70">{replyingTo.preview}</div>
                   </div>
                   <Button
-                    variant="secondary"
+                    variant="ghost"
                     size="icon"
-                    className="h-8 w-8 rounded-xl bg-white/5 text-px-text2 hover:bg-white/10"
+                    className="h-7 w-7 rounded-lg bg-white/5 text-px-text2 hover:bg-white/10 transition-all"
                     onClick={() => setReplyingTo(null)}
                   >
                     ×
@@ -2570,35 +2575,35 @@ function App() {
                 </div>
               ) : null}
 
-              <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-3 shadow-soft backdrop-blur">
+              <div className="rounded-2xl border border-white/8 bg-px-panel/70 p-3.5 shadow-lg backdrop-blur-sm">
                 {/* File Preview */}
                 {uploadedFiles.length > 0 && (
                   <div className="mb-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="text-xs font-extrabold text-px-text2">Attachments ({uploadedFiles.length})</div>
+                      <div className="text-xs font-semibold text-px-text/90">Attachments ({uploadedFiles.length})</div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 px-2 text-xs text-px-text2 hover:bg-white/10"
+                        className="h-6 px-2 text-xs text-px-text2/80 hover:bg-white/10 rounded-lg transition-all"
                         onClick={clearAllFiles}
                       >
                         Clear All
                       </Button>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       {uploadedFiles.map((file, index) => (
-                        <div key={index} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
-                          <div className="h-8 w-8 rounded-lg bg-px-brand/20 flex items-center justify-center text-px-brand">
+                        <div key={index} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/4 p-2 transition-all hover:bg-white/6">
+                          <div className="h-7 w-7 rounded-md bg-px-brand/15 flex items-center justify-center text-px-brand text-sm">
                             📎
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm font-medium text-px-text">{file.name}</div>
-                            <div className="text-xs text-px-text2/70">{(file.size / 1024).toFixed(1)} KB</div>
+                            <div className="text-xs text-px-text2/60">{(file.size / 1024).toFixed(1)} KB</div>
                           </div>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 rounded-lg text-px-text2 hover:bg-white/10"
+                            className="h-6 w-6 rounded-md text-px-text2/70 hover:bg-white/10 transition-all"
                             onClick={() => removeFile(index)}
                           >
                             ×
@@ -2613,7 +2618,7 @@ function App() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-10 w-10 rounded-2xl text-px-text2 hover:bg-white/10 transition-all"
+                    className="h-9 w-9 rounded-xl text-px-text2/80 hover:bg-white/8 hover:text-px-text transition-all"
                     onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
                     disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
                   >
@@ -2631,7 +2636,7 @@ function App() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-10 w-10 rounded-2xl text-px-text2 hover:bg-white/10 transition-all"
+                      className="h-9 w-9 rounded-xl text-px-text2/80 hover:bg-white/8 hover:text-px-text transition-all"
                       disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
                     >
                       📎
@@ -2640,14 +2645,14 @@ function App() {
                   
                   <div className="flex-1">
                     <Input
-                      className="border-white/12 bg-white/8 text-px-text placeholder:text-px-text2/60 transition-all focus:border-px-brand/40 focus:bg-white/10"
+                      className="border-white/10 bg-white/6 text-px-text placeholder:text-px-text2/50 rounded-xl px-4 py-2.5 transition-all focus:border-px-brand/30 focus:bg-white/8 focus:shadow-lg"
                       onFocus={() => emitTyping(true)}
                       onBlur={() => emitTyping(false)}
                       value={messageText}
                       placeholder={
                         navMode === 'home'
                           ? selectedDmThreadId
-                            ? 'Message...'
+                            ? 'Type a message...'
                             : 'Select a conversation'
                           : selectedChannelId
                             ? 'Message #' + (channels.find((c) => c.id === selectedChannelId)?.name || 'general')
@@ -2662,10 +2667,9 @@ function App() {
                       }}
                       disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
                     />
-                    <div className="mt-1 px-1 text-[10px] font-medium text-px-text2/50">Press Enter to send</div>
                   </div>
                   <Button
-                    className="h-10 rounded-2xl bg-gradient-to-r from-px-brand to-px-brand/90 px-6 font-bold text-white shadow-lg shadow-px-brand/30 transition-all hover:scale-105 hover:shadow-px-brand/40 active:scale-[0.98] disabled:opacity-40 disabled:scale-100"
+                    className="h-9 rounded-xl bg-gradient-to-r from-px-brand to-px-brand/80 px-5 font-semibold text-white shadow-lg shadow-px-brand/25 transition-all hover:scale-105 hover:shadow-px-brand/35 active:scale-[0.97] disabled:opacity-40 disabled:scale-100"
                     onClick={onSendMessage}
                     disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
                   >
