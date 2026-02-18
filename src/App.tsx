@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, SmilePlus, Trash2, Users } from 'lucide-react'
+import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -165,6 +165,7 @@ function App() {
   const [pinsBusy, setPinsBusy] = useState(false)
   const [pinsError, setPinsError] = useState<string | null>(null)
   const [pins, setPins] = useState<(ApiMessage | DmMessage)[]>([])
+  const [pinViewMode, setPinViewMode] = useState<'list' | 'grid'>('list')
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQ, setSearchQ] = useState('')
@@ -197,6 +198,138 @@ function App() {
 
   const [renameChannelOpen, setRenameChannelOpen] = useState(false)
   const [renameChannelName, setRenameChannelName] = useState('')
+
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+
+  // File upload state
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+
+  // Roles and permissions state
+  const [rolesOpen, setRolesOpen] = useState(false)
+  const [roles, setRoles] = useState([
+    { id: 'admin', name: 'Admin', permissions: ['manage_server', 'manage_channels', 'manage_members', 'moderate_messages'] },
+    { id: 'moderator', name: 'Moderator', permissions: ['manage_channels', 'moderate_messages'] },
+    { id: 'member', name: 'Member', permissions: [] }
+  ])
+  const [newRoleName, setNewRoleName] = useState('')
+  const [newRolePermissions, setNewRolePermissions] = useState<string[]>([])
+  const [memberRoles, setMemberRoles] = useState<Record<string, string>>({})
+
+  // Moderation tools state
+  const [moderationOpen, setModerationOpen] = useState(false)
+  const [moderationTarget, setModerationTarget] = useState<{ type: 'message' | 'user'; id: string; data?: any } | null>(null)
+  const [moderationAction, setModerationAction] = useState<'delete' | 'timeout' | 'warn' | 'ban'>('delete')
+  const [moderationReason, setModerationReason] = useState('')
+  const [moderationDuration, setModerationDuration] = useState(60) // minutes
+
+  // Notification settings state
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notificationSettings, setNotificationSettings] = useState({
+    enableDesktop: true,
+    enableSound: true,
+    enableEmail: false,
+    mentionOnly: false,
+    dmNotifications: true,
+    channelNotifications: true,
+    serverNotifications: false
+  })
+
+  // Emoji data
+  const commonEmojis = [
+    '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛',
+    '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔',
+    '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '😎', '🤓', '🧐', '😕',
+    '😟', '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓',
+    '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '😈', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻', '👽', '👾', '🤖', '❤️',
+    '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '👍', '👎', '👌',
+    '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '✋', '🤚', '🖐️', '🖖', '👋', '🤙', '💪', '🙏', '🎉', '🎊'
+  ]
+
+  const insertEmoji = (emoji: string) => {
+    setMessageText(prev => prev + emoji)
+    setEmojiPickerOpen(false)
+  }
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    if (files.length > 0) {
+      setUploadedFiles(prev => [...prev, ...files])
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const clearAllFiles = () => {
+    setUploadedFiles([])
+  }
+
+  const addRole = () => {
+    if (!newRoleName.trim()) return
+    const newRole = {
+      id: newRoleName.toLowerCase().replace(/\s+/g, '_'),
+      name: newRoleName,
+      permissions: newRolePermissions
+    }
+    setRoles(prev => [...prev, newRole])
+    setNewRoleName('')
+    setNewRolePermissions([])
+  }
+
+  const deleteRole = (roleId: string) => {
+    if (roleId === 'admin' || roleId === 'member') return // Can't delete default roles
+    setRoles(prev => prev.filter(r => r.id !== roleId))
+    // Reset any members with this role to 'member'
+    setMemberRoles(prev => {
+      const updated = { ...prev }
+      Object.keys(updated).forEach(userId => {
+        if (updated[userId] === roleId) {
+          updated[userId] = 'member'
+        }
+      })
+      return updated
+    })
+  }
+
+  const updateMemberRole = (userId: string, roleId: string) => {
+    setMemberRoles(prev => ({ ...prev, [userId]: roleId }))
+  }
+
+  const openModeration = (type: 'message' | 'user', id: string, data?: any) => {
+    setModerationTarget({ type, id, data })
+    setModerationOpen(true)
+    setModerationAction('delete')
+    setModerationReason('')
+    setModerationDuration(60)
+  }
+
+  const executeModeration = () => {
+    if (!moderationTarget || !user) return
+    
+    // In a real app, this would send to backend
+    console.log('Moderation action:', {
+      action: moderationAction,
+      target: moderationTarget,
+      reason: moderationReason,
+      duration: moderationDuration,
+      moderator: user.id
+    })
+    
+    setModerationOpen(false)
+    setModerationTarget(null)
+  }
+
+  const canModerate = () => {
+    if (!user) return false
+    const userRole = memberRoles[user.id] || 'member'
+    const role = roles.find(r => r.id === userRole)
+    return role ? role.permissions.includes('moderate_messages') : false
+  }
+
+  const updateNotificationSetting = (key: keyof typeof notificationSettings, value: boolean) => {
+    setNotificationSettings(prev => ({ ...prev, [key]: value }))
+  }
   const [renameChannelBusy, setRenameChannelBusy] = useState(false)
   const [renameChannelError, setRenameChannelError] = useState<string | null>(null)
 
@@ -1264,7 +1397,7 @@ function App() {
 
   function onSendMessage() {
     const content = messageText.trim()
-    if (!content) return
+    if (!content && uploadedFiles.length === 0) return
     if (!user) {
       setAuthMode('login')
       setAuthOpen(true)
@@ -1283,6 +1416,7 @@ function App() {
       socketRef.current.emit('chat:send', { channelId: selectedChannelId, content, replyToId })
       setMessageText('')
       setReplyingTo(null)
+      setUploadedFiles([])
       return
     }
 
@@ -1291,6 +1425,7 @@ function App() {
       socketRef.current.emit('dm:send', { threadId: selectedDmThreadId, content, replyToId })
       setMessageText('')
       setReplyingTo(null)
+      setUploadedFiles([])
     }
   }
 
@@ -2015,20 +2150,20 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-gradient-to-b from-px-panel2/90 to-px-panel2/70 px-4 backdrop-blur-lg supports-[backdrop-filter]:bg-px-panel2/60 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="relative h-10 w-10 rounded-2xl bg-gradient-to-br from-white/15 to-white/5 grid place-items-center shadow-inner transition-all hover:scale-105">
-                  {navMode === 'home' ? <MessageCircle className="h-5 w-5 text-px-text" /> : <Hash className="h-5 w-5 text-px-text" />}
-                  <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-px-success shadow-lg shadow-px-success/50 animate-pulse" />
+          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-gradient-to-b from-px-panel2/90 to-px-panel2/70 px-2 lg:px-4 backdrop-blur-lg supports-[backdrop-filter]:bg-px-panel2/60 shadow-sm">
+            <div className="flex items-center gap-2 lg:gap-4 flex-1 min-w-0">
+              <div className="flex items-center gap-2 lg:gap-3">
+                <div className="relative h-8 lg:h-10 w-8 lg:w-10 rounded-2xl bg-gradient-to-br from-white/15 to-white/5 grid place-items-center shadow-inner transition-all hover:scale-105">
+                  {navMode === 'home' ? <MessageCircle className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" /> : <Hash className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" />}
+                  <div className="absolute -bottom-1 -right-1 h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-px-success shadow-lg shadow-px-success/50 animate-pulse" />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-base font-bold tracking-tight text-px-text drop-shadow-sm">
+                  <div className="truncate text-sm lg:text-base font-bold tracking-tight text-px-text drop-shadow-sm">
                     {navMode === 'home'
                       ? dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'Home'
                       : servers.find((s) => s.id === selectedServerId)?.name || 'Server'}
                   </div>
-                  <div className="truncate text-xs font-medium text-px-text2/80">
+                  <div className="truncate text-xs lg:text-xs font-medium text-px-text2/80 hidden sm:block">
                     {navMode === 'home'
                       ? selectedDmThreadId
                         ? 'Direct Messages'
@@ -2051,24 +2186,26 @@ function App() {
                 {socketTarget ? <span className="text-[10px] font-medium text-px-text2/70 ml-1">@ {socketTarget}</span> : null}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-extrabold tracking-wide text-px-text2">
-                Protected by Equinox V1
+            <div className="flex items-center gap-1 lg:gap-2">
+              <div className="hidden md:flex items-center rounded-full border border-white/10 bg-white/5 px-2 lg:px-3 py-1 text-[10px] font-extrabold tracking-wide text-px-text2">
+                <span className="hidden lg:inline">Protected by Equinox V1</span>
+                <span className="lg:hidden">Equinox</span>
               </div>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
+                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
                 onClick={() => {
                   setPinsOpen(true)
                   if (user) refreshPins()
                 }}
                 disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
               >
-                Pins
+                <span className="hidden lg:inline">Pins</span>
+                <Pin className="h-4 w-4 lg:hidden" />
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
+                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
                 onClick={() => {
                   setSearchOpen(true)
                   setSearchError(null)
@@ -2076,11 +2213,12 @@ function App() {
                 }}
                 disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
               >
-                Search
+                <span className="hidden lg:inline">Search</span>
+                <Hash className="h-4 w-4 lg:hidden" />
               </Button>
               <Button
                 variant="secondary"
-                className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
+                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
                 onClick={() => {
                   setAdminOpen(true)
                   setAdminError(null)
@@ -2090,7 +2228,17 @@ function App() {
                 }}
                 disabled={!user}
               >
-                Admin
+                <span className="hidden lg:inline">Admin</span>
+                <Settings className="h-4 w-4 lg:hidden" />
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-8 lg:h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98] text-xs lg:text-sm px-2 lg:px-4"
+                onClick={() => setNotificationsOpen(true)}
+                disabled={!user}
+              >
+                <span className="hidden lg:inline">Notifications</span>
+                <MessageCircle className="h-4 w-4 lg:hidden" />
               </Button>
               <Button
                 variant="secondary"
@@ -2326,6 +2474,8 @@ function App() {
                               onReply={() => {
                                 setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
                               }}
+                              canModerate={canModerate() && !isMine && !isDeleted}
+                              onModerate={() => openModeration('message', m.id, m)}
                             />
                           )}
                         </div>
@@ -2383,6 +2533,8 @@ function App() {
                                 onReply={() => {
                                   setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
                                 }}
+                                canModerate={canModerate() && !isMine && !isDeleted}
+                                onModerate={() => openModeration('message', m.id, m)}
                               />
                             )}
                           </div>
@@ -2419,7 +2571,73 @@ function App() {
               ) : null}
 
               <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-3 shadow-soft backdrop-blur">
+                {/* File Preview */}
+                {uploadedFiles.length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-extrabold text-px-text2">Attachments ({uploadedFiles.length})</div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-px-text2 hover:bg-white/10"
+                        onClick={clearAllFiles}
+                      >
+                        Clear All
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {uploadedFiles.map((file, index) => (
+                        <div key={index} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
+                          <div className="h-8 w-8 rounded-lg bg-px-brand/20 flex items-center justify-center text-px-brand">
+                            📎
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-px-text">{file.name}</div>
+                            <div className="text-xs text-px-text2/70">{(file.size / 1024).toFixed(1)} KB</div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 rounded-lg text-px-text2 hover:bg-white/10"
+                            onClick={() => removeFile(index)}
+                          >
+                            ×
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex items-end gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 rounded-2xl text-px-text2 hover:bg-white/10 transition-all"
+                    onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+                    disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
+                  >
+                    😊
+                  </Button>
+                  
+                  <div className="relative">
+                    <input
+                      type="file"
+                      multiple
+                      className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+                      onChange={handleFileUpload}
+                      disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 rounded-2xl text-px-text2 hover:bg-white/10 transition-all"
+                      disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
+                    >
+                      📎
+                    </Button>
+                  </div>
+                  
                   <div className="flex-1">
                     <Input
                       className="border-white/12 bg-white/8 text-px-text placeholder:text-px-text2/60 transition-all focus:border-px-brand/40 focus:bg-white/10"
@@ -2458,6 +2676,36 @@ function App() {
             </div>
           </footer>
         </main>
+
+        {/* Emoji Picker Dialog */}
+        {emojiPickerOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setEmojiPickerOpen(false)}>
+            <div className="mx-4 max-w-md w-full rounded-3xl border border-white/10 bg-px-panel p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-px-text">Emoji Picker</h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-xl text-px-text2 hover:bg-white/10"
+                  onClick={() => setEmojiPickerOpen(false)}
+                >
+                  ×
+                </Button>
+              </div>
+              <div className="grid grid-cols-8 gap-2 max-h-64 overflow-y-auto">
+                {commonEmojis.map((emoji, index) => (
+                  <button
+                    key={index}
+                    className="h-10 w-10 rounded-xl hover:bg-white/10 transition-all text-lg flex items-center justify-center text-px-text hover:scale-110"
+                    onClick={() => insertEmoji(emoji)}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {navMode === 'server' ? (
           <aside className="bg-px-panel border-l border-white/5 hidden h-full flex-col lg:flex">
@@ -2622,24 +2870,79 @@ function App() {
           if (o && user) refreshPins()
         }}
       >
-        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-3xl">
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-4xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
-            <DialogTitle>Pinned Messages</DialogTitle>
-            <DialogDescription>{navMode === 'server' ? 'This channel' : 'This DM'} • Protected by Equinox V1</DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>Pinned Messages</DialogTitle>
+                <DialogDescription>{navMode === 'server' ? 'This channel' : 'This DM'} • Protected by Equinox V1</DialogDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-8 px-3 ${pinViewMode === 'list' ? 'bg-px-brand/20 text-px-brand' : 'bg-white/5 text-px-text2'}`}
+                  onClick={() => setPinViewMode('list')}
+                >
+                  List
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-8 px-3 ${pinViewMode === 'grid' ? 'bg-px-brand/20 text-px-brand' : 'bg-white/5 text-px-text2'}`}
+                  onClick={() => setPinViewMode('grid')}
+                >
+                  Grid
+                </Button>
+              </div>
+            </div>
           </DialogHeader>
 
           {pinsError ? <div className="text-sm text-red-400">{pinsError}</div> : null}
-          {pinsBusy ? <div className="text-sm text-px-text2">Loading…</div> : null}
-          {!pinsBusy && !pins.length ? <div className="text-sm text-px-text2">No pinned messages.</div> : null}
-
-          <div className="space-y-2">
-            {pins.map((m) => (
-              <div key={m.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <div className="text-sm font-bold">{m.author.username}</div>
-                <div className="mt-1 text-sm text-px-text">{m.deletedAt ? 'Message deleted' : m.content}</div>
+          
+          {pinsBusy ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-4 animate-pulse">
+                  <div className="h-4 w-24 rounded bg-white/20 mb-2"></div>
+                  <div className="h-3 w-full rounded bg-white/20"></div>
+                </div>
+              ))}
+            </div>
+          ) : !pins.length ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center animate-in fade-in duration-300">
+              <div className="h-16 w-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
+                <Pin className="h-8 w-8 text-px-text2/50" />
               </div>
-            ))}
-          </div>
+              <div className="text-lg font-semibold text-px-text mb-2">No pinned messages</div>
+              <div className="text-sm text-px-text2/70">Pin important messages to find them easily</div>
+            </div>
+          ) : (
+            <div className={pinViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto' : 'space-y-3 max-h-[60vh] overflow-y-auto'}>
+              {pins.map((m, index) => (
+                <div 
+                  key={m.id} 
+                  className={`rounded-xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-all hover:scale-[1.02] animate-in fade-in duration-300`}
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6 rounded-lg">
+                        {m.author.avatarUrl ? <AvatarImage src={m.author.avatarUrl} alt="" className="object-cover" /> : null}
+                        <AvatarFallback className="text-xs font-bold">{m.author.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="text-sm font-bold text-px-text">{m.author.username}</div>
+                    </div>
+                    <Pin className="h-4 w-4 text-px-brand" />
+                  </div>
+                  <div className="text-sm text-px-text">{m.deletedAt ? 'Message deleted' : m.content}</div>
+                  <div className="mt-2 text-xs text-px-text2/50">
+                    {new Date(m.createdAt).toLocaleDateString()} • {new Date(m.createdAt).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -2997,9 +3300,348 @@ function App() {
                     {!adminAudit.length ? <div className="text-sm text-px-text2">No logs</div> : null}
                   </div>
                 </div>
+
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="text-xs font-extrabold tracking-wide text-px-text2">ROLES & PERMISSIONS</div>
+                    <Button
+                      variant="secondary"
+                      className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                      onClick={() => setRolesOpen(true)}
+                    >
+                      Manage Roles
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    {roles.slice(0, 3).map((role) => (
+                      <div key={role.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                        <div>
+                          <div className="text-sm font-bold text-px-text">{role.name}</div>
+                          <div className="text-xs text-px-text2">{role.permissions.length} permissions</div>
+                        </div>
+                        <div className="text-xs text-px-text2/70">{role.id}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Roles Management Dialog */}
+      <Dialog open={rolesOpen} onOpenChange={setRolesOpen}>
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Roles & Permissions</DialogTitle>
+            <DialogDescription>Manage server roles and member permissions</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Create New Role */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">CREATE NEW ROLE</div>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    value={newRoleName}
+                    onChange={(e) => setNewRoleName(e.target.value)}
+                    placeholder="Role name..."
+                    className="flex-1 border-white/12 bg-white/8 text-px-text placeholder:text-px-text2/60"
+                  />
+                  <Button
+                    className="bg-px-brand text-white hover:bg-px-brand/90"
+                    onClick={addRole}
+                    disabled={!newRoleName.trim()}
+                  >
+                    Create
+                  </Button>
+                </div>
+                
+                <div>
+                  <div className="mb-2 text-xs font-extrabold text-px-text2">Permissions</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'manage_server', label: 'Manage Server' },
+                      { id: 'manage_channels', label: 'Manage Channels' },
+                      { id: 'manage_members', label: 'Manage Members' },
+                      { id: 'moderate_messages', label: 'Moderate Messages' }
+                    ].map((permission) => (
+                      <label key={permission.id} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-2 cursor-pointer hover:bg-white/10">
+                        <input
+                          type="checkbox"
+                          checked={newRolePermissions.includes(permission.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setNewRolePermissions(prev => [...prev, permission.id])
+                            } else {
+                              setNewRolePermissions(prev => prev.filter(p => p !== permission.id))
+                            }
+                          }}
+                          className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                        />
+                        <span className="text-sm text-px-text">{permission.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Existing Roles */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">EXISTING ROLES</div>
+              <div className="space-y-3">
+                {roles.map((role) => (
+                  <div key={role.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="font-bold text-px-text">{role.name}</div>
+                        <div className="text-xs text-px-text2/70">{role.id}</div>
+                      </div>
+                      {role.id !== 'admin' && role.id !== 'member' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-red-400 hover:bg-red-400/10"
+                          onClick={() => deleteRole(role.id)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {role.permissions.map((permission) => (
+                        <span key={permission} className="rounded-lg bg-px-brand/20 px-2 py-1 text-xs text-px-brand">
+                          {permission.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </span>
+                      ))}
+                      {role.permissions.length === 0 && (
+                        <span className="text-xs text-px-text2/50">No permissions</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Member Role Assignment */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">MEMBER ROLES</div>
+              <div className="space-y-3">
+                {members.slice(0, 10).map((member) => (
+                  <div key={member.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8 rounded-lg">
+                        {member.avatarUrl ? <AvatarImage src={member.avatarUrl} alt="" className="object-cover" /> : null}
+                        <AvatarFallback className="text-xs font-bold">{member.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="font-medium text-px-text">{member.username}</div>
+                        <div className="text-xs text-px-text2/70">{member.id}</div>
+                      </div>
+                    </div>
+                    <select
+                      value={memberRoles[member.id] || 'member'}
+                      onChange={(e) => updateMemberRole(member.id, e.target.value)}
+                      className="rounded-lg border border-white/10 bg-white/8 px-2 py-1 text-sm text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                    >
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>{role.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Moderation Dialog */}
+      <Dialog open={moderationOpen} onOpenChange={setModerationOpen}>
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-md">
+          <DialogHeader>
+            <DialogTitle>Moderation Actions</DialogTitle>
+            <DialogDescription>
+              {moderationTarget?.type === 'message' ? 'Moderate message' : 'Moderate user'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-extrabold text-px-text2">Action</label>
+              <select
+                value={moderationAction}
+                onChange={(e) => setModerationAction(e.target.value as any)}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-sm text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+              >
+                <option value="delete">Delete Message</option>
+                <option value="timeout">Timeout User</option>
+                <option value="warn">Warn User</option>
+                <option value="ban">Ban User</option>
+              </select>
+            </div>
+
+            {(moderationAction === 'timeout' || moderationAction === 'warn' || moderationAction === 'ban') && (
+              <div>
+                <label className="text-xs font-extrabold text-px-text2">Duration (minutes)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10080"
+                  value={moderationDuration}
+                  onChange={(e) => setModerationDuration(Number(e.target.value))}
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-sm text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                />
+                <div className="mt-1 text-xs text-px-text2/50">
+                  {moderationDuration < 60 ? `${moderationDuration} minutes` :
+                   moderationDuration < 1440 ? `${Math.floor(moderationDuration / 60)} hours` :
+                   `${Math.floor(moderationDuration / 1440)} days`}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-extrabold text-px-text2">Reason</label>
+              <textarea
+                value={moderationReason}
+                onChange={(e) => setModerationReason(e.target.value)}
+                placeholder="Reason for moderation action..."
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-sm text-px-text outline-none focus:ring-2 focus:ring-px-brand/40 resize-none"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1 bg-white/5 text-px-text2 hover:bg-white/10"
+                onClick={() => setModerationOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-red-500 text-white hover:bg-red-600"
+                onClick={executeModeration}
+                disabled={!moderationReason.trim()}
+              >
+                Execute Action
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notification Settings Dialog */}
+      <Dialog open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-md">
+          <DialogHeader>
+            <DialogTitle>Notification Settings</DialogTitle>
+            <DialogDescription>Manage your notification preferences</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <div className="text-xs font-extrabold tracking-wide text-px-text2">GENERAL</div>
+              
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Desktop Notifications</div>
+                  <div className="text-xs text-px-text2/70">Show notifications on your desktop</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.enableDesktop}
+                  onChange={(e) => updateNotificationSetting('enableDesktop', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Sound Effects</div>
+                  <div className="text-xs text-px-text2/70">Play sounds for notifications</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.enableSound}
+                  onChange={(e) => updateNotificationSetting('enableSound', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Email Notifications</div>
+                  <div className="text-xs text-px-text2/70">Receive email summaries</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.enableEmail}
+                  onChange={(e) => updateNotificationSetting('enableEmail', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Mentions Only</div>
+                  <div className="text-xs text-px-text2/70">Only notify for @mentions</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.mentionOnly}
+                  onChange={(e) => updateNotificationSetting('mentionOnly', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-xs font-extrabold tracking-wide text-px-text2">MESSAGE TYPES</div>
+              
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Direct Messages</div>
+                  <div className="text-xs text-px-text2/70">Notifications for DMs</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.dmNotifications}
+                  onChange={(e) => updateNotificationSetting('dmNotifications', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Channel Messages</div>
+                  <div className="text-xs text-px-text2/70">Notifications for channel activity</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.channelNotifications}
+                  onChange={(e) => updateNotificationSetting('channelNotifications', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                <div>
+                  <div className="text-sm font-medium text-px-text">Server Events</div>
+                  <div className="text-xs text-px-text2/70">Notifications for server updates</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.serverNotifications}
+                  onChange={(e) => updateNotificationSetting('serverNotifications', e.target.checked)}
+                  className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                />
+              </label>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -3515,6 +4157,8 @@ function Message({
   canDelete,
   onEdit,
   onDelete,
+  canModerate,
+  onModerate,
 }: {
   who: string
   avatarUrl?: string | null
@@ -3535,6 +4179,8 @@ function Message({
   canDelete?: boolean
   onEdit?: () => void
   onDelete?: () => void
+  canModerate?: boolean
+  onModerate?: () => void
 }) {
   const time = useMemo(() => {
     if (!createdAt) return 'just now'
@@ -3664,6 +4310,16 @@ function Message({
             title={isPinned ? 'Unpin' : 'Pin'}
           >
             <Pin className="h-4 w-4" />
+          </button>
+        ) : null}
+        {canModerate ? (
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-md border border-white/10 bg-red-500/20 text-red-400 hover:bg-red-500/30"
+            onClick={onModerate}
+            title="Moderate"
+          >
+            <Shield className="h-4 w-4" />
           </button>
         ) : null}
         <button
