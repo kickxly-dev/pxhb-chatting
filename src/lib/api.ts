@@ -26,10 +26,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<Api
   return data as ApiResponse<T>
 }
 
-export type User = { id: string; username: string }
+export type User = { id: string; username: string; displayName?: string | null; avatarUrl?: string | null }
 export type Server = { id: string; name: string; iconUrl?: string | null }
 export type Channel = { id: string; name: string; type: string }
-export type Member = { id: string; username: string; role: string }
+export type Member = { id: string; username: string; displayName?: string | null; avatarUrl?: string | null; role: string }
 
 export type ReactionSummary = { emoji: string; count: number; viewerHasReacted: boolean }
 
@@ -42,13 +42,13 @@ export type Message = {
   deletedAt?: string | null
   pinnedAt?: string | null
   pinnedById?: string | null
-  author: { id: string; username: string }
-  replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
+  author: { id: string; username: string; displayName?: string | null; avatarUrl?: string | null }
+  replyTo?: { id: string; content: string; author: { id: string; username: string; displayName?: string | null; avatarUrl?: string | null } } | null
   reactions?: ReactionSummary[]
 }
 
-export type FriendUser = { id: string; username: string }
-export type Friend = { id: string; username: string; friendshipId: string; createdAt: string }
+export type FriendUser = { id: string; username: string; displayName?: string | null; avatarUrl?: string | null }
+export type Friend = { id: string; username: string; displayName?: string | null; avatarUrl?: string | null; friendshipId: string; createdAt: string }
 export type FriendRequest = {
   id: string
   status: string
@@ -73,8 +73,8 @@ export type DmMessage = {
   deletedAt?: string | null
   pinnedAt?: string | null
   pinnedById?: string | null
-  author: { id: string; username: string }
-  replyTo?: { id: string; content: string; author: { id: string; username: string } } | null
+  author: { id: string; username: string; displayName?: string | null; avatarUrl?: string | null }
+  replyTo?: { id: string; content: string; author: { id: string; username: string; displayName?: string | null; avatarUrl?: string | null } } | null
   reactions?: ReactionSummary[]
 }
 
@@ -98,6 +98,13 @@ export async function apiRegister(username: string, password: string) {
 
 export async function apiLogout() {
   return apiFetch<Record<string, never>>('/api/auth/logout', { method: 'POST' })
+}
+
+export async function apiUpdateMe(payload: { displayName?: string | null; avatarUrl?: string | null }) {
+  return apiFetch<{ user: User }>('/api/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function apiListServers() {

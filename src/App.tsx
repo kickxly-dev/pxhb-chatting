@@ -68,6 +68,7 @@ import {
   apiSendDmMessage,
   apiSendFriendRequest,
   apiUpdateServer,
+  apiUpdateMe,
   type AdminAuditLog,
   type AdminOverview,
   type AdminSecurity,
@@ -165,6 +166,12 @@ function App() {
   const [serverSettingsName, setServerSettingsName] = useState('')
   const [serverSettingsIconUrl, setServerSettingsIconUrl] = useState('')
 
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileDisplayName, setProfileDisplayName] = useState('')
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState('')
+
   const [createChannelOpen, setCreateChannelOpen] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
   const [createChannelBusy, setCreateChannelBusy] = useState(false)
@@ -220,9 +227,20 @@ function App() {
   const [dmThreadsLoading, setDmThreadsLoading] = useState(false)
 
   const initials = useMemo(() => {
-    const u = user?.username?.trim()
+    const u = (user?.displayName || user?.username || '').trim()
     return u ? u.slice(0, 1).toUpperCase() : 'G'
-  }, [user?.username])
+  }, [user?.displayName, user?.username])
+
+  const displayName = useMemo(() => {
+    if (!user) return 'Guest'
+    return (user.displayName || user.username).trim() || user.username
+  }, [user])
+
+  function displayNameFor(u: { username: string; displayName?: string | null } | null | undefined) {
+    if (!u) return ''
+    const d = (u.displayName || '').trim()
+    return d || u.username
+  }
 
   const formatShortTime = useMemo(() => {
     return (iso: string | null) => {
@@ -232,6 +250,39 @@ function App() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   }, [])
+
+  async function onSaveProfile() {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+    setProfileBusy(true)
+    setProfileError(null)
+    try {
+      const nextDisplayName = profileDisplayName.trim()
+      const nextAvatarUrl = profileAvatarUrl.trim()
+      const res = await apiUpdateMe({ displayName: nextDisplayName || null, avatarUrl: nextAvatarUrl || null })
+      setUser(res.user)
+
+      setMessages((prev) =>
+        prev.map((m) => (m.author.id === res.user.id ? { ...m, author: { ...m.author, displayName: res.user.displayName, avatarUrl: res.user.avatarUrl } } : m)),
+      )
+      setDmMessages((prev) =>
+        prev.map((m) => (m.author.id === res.user.id ? { ...m, author: { ...m.author, displayName: res.user.displayName, avatarUrl: res.user.avatarUrl } } : m)),
+      )
+      setMembers((prev) => prev.map((m) => (m.id === res.user.id ? { ...m, displayName: res.user.displayName, avatarUrl: res.user.avatarUrl } : m)))
+      setFriends((prev) => prev.map((f) => (f.id === res.user.id ? { ...f, displayName: res.user.displayName, avatarUrl: res.user.avatarUrl } : f)))
+      pushToast('Profile', 'Updated', 'success')
+      setProfileOpen(false)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'profile_failed'
+      setProfileError(msg)
+      pushToast('Profile', msg, 'error')
+    } finally {
+      setProfileBusy(false)
+    }
+  }
 
   function applyPresence(entries: PresenceEntry[]) {
     setPresenceByUserId((prev) => {
@@ -1660,7 +1711,8 @@ function App() {
                           return (
                             <div className="relative">
                               <Avatar className="h-7 w-7">
-                                <AvatarFallback className="text-[10px]">{t.otherUser.username.slice(0, 1).toUpperCase()}</AvatarFallback>
+                                {t.otherUser.avatarUrl ? <AvatarImage src={t.otherUser.avatarUrl} alt="" className="object-cover" /> : null}
+                                <AvatarFallback className="text-[10px]">{displayNameFor(t.otherUser).slice(0, 1).toUpperCase()}</AvatarFallback>
                               </Avatar>
                               <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-px-panel ${dot}`} />
                             </div>
@@ -1684,7 +1736,7 @@ function App() {
                         return p.lastSeenAt ? `Last seen ${new Date(p.lastSeenAt).toLocaleString()}` : 'Offline'
                       })()}
                     >
-                      {t.otherUser.username}
+                      {displayNameFor(t.otherUser)}
                     </ChannelButton>
                   ))
                 ) : (
@@ -1733,23 +1785,34 @@ function App() {
               <div className="text-xs font-extrabold text-px-text2">ACCOUNT</div>
               <div className="mt-2 flex items-center gap-2">
                 <Avatar className="h-9 w-9">
+                  {user?.avatarUrl ? <AvatarImage src={user.avatarUrl} alt="" className="object-cover" /> : null}
                   <AvatarFallback>{initials}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <div className="truncate font-bold">{user ? user.username : 'Guest'}</div>
+                  <div className="truncate font-bold">{displayName}</div>
                   <div className="truncate text-xs text-px-text2">{user ? 'online' : 'offline'}</div>
                 </div>
               </div>
 
               <div className="mt-3 flex gap-2">
                 {user ? (
-                  <Button
-                    variant="secondary"
-                    className="h-9 w-full bg-white/5 text-px-text2 hover:bg-white/10"
-                    onClick={onLogout}
-                  >
-                    Logout
-                  </Button>
+                  <>
+                    <Button
+                      variant="secondary"
+                      className="h-9 w-full bg-white/5 text-px-text2 hover:bg-white/10"
+                      onClick={() => {
+                        setProfileDisplayName(user.displayName || '')
+                        setProfileAvatarUrl(user.avatarUrl || '')
+                        setProfileError(null)
+                        setProfileOpen(true)
+                      }}
+                    >
+                      Profile
+                    </Button>
+                    <Button variant="secondary" className="h-9 w-full bg-white/5 text-px-text2 hover:bg-white/10" onClick={onLogout}>
+                      Logout
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     className="h-9 w-full bg-px-brand text-white hover:bg-px-brand/90"
@@ -2050,12 +2113,13 @@ function App() {
                             </div>
                           ) : (
                             <Message
-                              who={m.author.username}
+                              who={displayNameFor(m.author)}
+                              avatarUrl={m.author.avatarUrl || null}
                               text={showText}
                               tone={isDeleted ? 'system' : m.author.id === user?.id ? 'me' : 'bot'}
                               createdAt={m.createdAt}
                               showHeader={showHeader}
-                              replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
+                              replyPreview={m.replyTo ? { who: displayNameFor(m.replyTo.author), text: m.replyTo.content } : null}
                               reactions={m.reactions}
                               editedAt={m.editedAt}
                               deletedAt={m.deletedAt}
@@ -2105,12 +2169,13 @@ function App() {
                             </div>
                           ) : (
                             <Message
-                              who={m.author.username}
+                              who={displayNameFor(m.author)}
+                              avatarUrl={m.author.avatarUrl || null}
                               text={showText}
                               tone={isDeleted ? 'system' : m.author.id === user?.id ? 'me' : 'bot'}
                               createdAt={m.createdAt}
                               showHeader={showHeader}
-                              replyPreview={m.replyTo ? { who: m.replyTo.author.username, text: m.replyTo.content } : null}
+                              replyPreview={m.replyTo ? { who: displayNameFor(m.replyTo.author), text: m.replyTo.content } : null}
                               reactions={m.reactions}
                               editedAt={m.editedAt}
                               deletedAt={m.deletedAt}
@@ -2140,9 +2205,7 @@ function App() {
               {replyingTo ? (
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
                   <div className="min-w-0">
-                    <div className="truncate text-xs font-extrabold text-px-text2">
-                      Replying to <span className="text-px-text">{replyingTo.who}</span>
-                    </div>
+                    <div className="truncate text-xs font-extrabold">{replyingTo.who}</div>
                     <div className="truncate text-xs text-px-text2">{replyingTo.preview}</div>
                   </div>
                   <Button
@@ -2224,7 +2287,7 @@ function App() {
                 ) : members.length ? (
                   members.map((m) => {
                     const p = getPresenceFor(m.id)
-                    return <Member key={m.id} name={m.username} status={p.status} lastSeenAt={p.lastSeenAt} />
+                    return <Member key={m.id} name={displayNameFor(m)} username={m.username} avatarUrl={m.avatarUrl || null} status={p.status} lastSeenAt={p.lastSeenAt} />
                   })
                 ) : (
                   <Member name="No members" status="offline" />
@@ -2935,12 +2998,61 @@ function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={profileOpen}
+        onOpenChange={(o) => {
+          setProfileOpen(o)
+          if (!o) {
+            setProfileBusy(false)
+            setProfileError(null)
+          }
+        }}
+      >
+        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+          <DialogHeader>
+            <DialogTitle>Profile</DialogTitle>
+            <DialogDescription className="text-px-text2">Customize your display name and avatar URL.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <Input
+              value={profileDisplayName}
+              onChange={(e) => setProfileDisplayName(e.target.value)}
+              placeholder="Display name (optional)"
+              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+            />
+            <Input
+              value={profileAvatarUrl}
+              onChange={(e) => setProfileAvatarUrl(e.target.value)}
+              placeholder="Avatar URL (https://…)"
+              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+            />
+            {profileError ? <div className="text-sm font-semibold text-red-400">{profileError}</div> : null}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="secondary"
+              className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+              onClick={() => setProfileOpen(false)}
+              disabled={profileBusy}
+            >
+              Cancel
+            </Button>
+            <Button className="h-9 bg-px-brand text-white hover:bg-px-brand/90" onClick={onSaveProfile} disabled={profileBusy}>
+              {profileBusy ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function Message({
   who,
+  avatarUrl,
   text,
   tone,
   createdAt,
@@ -2960,6 +3072,7 @@ function Message({
   onDelete,
 }: {
   who: string
+  avatarUrl?: string | null
   text: string
   tone: 'system' | 'bot' | 'me'
   createdAt?: string
@@ -3019,6 +3132,7 @@ function Message({
         <div className="w-10 shrink-0">
           {showHeader ? (
             <Avatar className="h-10 w-10">
+              {avatarUrl ? <AvatarImage src={avatarUrl} alt="" className="object-cover" /> : null}
               <AvatarFallback>{initial}</AvatarFallback>
             </Avatar>
           ) : (
@@ -3135,12 +3249,25 @@ function Message({
   )
 }
 
-function Member({ name, status, lastSeenAt }: { name: string; status: 'online' | 'idle' | 'offline'; lastSeenAt?: string | null }) {
+function Member({
+  name,
+  username,
+  avatarUrl,
+  status,
+  lastSeenAt,
+}: {
+  name: string
+  username?: string
+  avatarUrl?: string | null
+  status: 'online' | 'idle' | 'offline'
+  lastSeenAt?: string | null
+}) {
   const dot = status === 'online' ? 'bg-px-success' : status === 'idle' ? 'bg-amber-400' : 'bg-white/20'
   return (
     <div className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-white/5">
       <div className="relative">
         <Avatar className="h-9 w-9">
+          {avatarUrl ? <AvatarImage src={avatarUrl} alt="" className="object-cover" /> : null}
           <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
         <div className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-px-panel ${dot}`} />
@@ -3148,6 +3275,7 @@ function Member({ name, status, lastSeenAt }: { name: string; status: 'online' |
       <div className="min-w-0">
         <div className="truncate font-bold">{name}</div>
         <div className="truncate text-xs text-px-text2">
+          {username && username !== name ? `@${username} • ` : ''}
           {status === 'offline' && lastSeenAt ? `last seen ${new Date(lastSeenAt).toLocaleString()}` : status}
         </div>
       </div>

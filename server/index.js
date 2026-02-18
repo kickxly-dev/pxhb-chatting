@@ -454,7 +454,7 @@ io.on('connection', (socket) => {
             id: true,
             channelId: true,
             content: true,
-            author: { select: { id: true, username: true } },
+            author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
           },
         })
         if (!replyTo || replyTo.channelId !== channelId) {
@@ -471,8 +471,8 @@ io.on('connection', (socket) => {
           replyToId: replyTo?.id || null,
         },
         include: {
-          author: { select: { id: true, username: true } },
-          replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+          author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+          replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
           reactions: { select: { emoji: true, userId: true } },
         },
       })
@@ -616,7 +616,7 @@ io.on('connection', (socket) => {
             id: true,
             threadId: true,
             content: true,
-            author: { select: { id: true, username: true } },
+            author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
           },
         })
         if (!replyTo || replyTo.threadId !== threadId) {
@@ -628,8 +628,8 @@ io.on('connection', (socket) => {
       const message = await prisma.dmMessage.create({
         data: { threadId, authorId: userId, content: content.trim(), replyToId: replyTo?.id || null },
         include: {
-          author: { select: { id: true, username: true } },
-          replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+          author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+          replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
           reactions: { select: { emoji: true, userId: true } },
         },
       })
@@ -1056,7 +1056,7 @@ app.post('/api/auth/register', async (req, res) => {
       username: uname,
       passwordHash: hash,
     },
-    select: { id: true, username: true },
+    select: { id: true, username: true, displayName: true, avatarUrl: true },
   })
 
   req.session.userId = user.id
@@ -1082,7 +1082,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   if (!ok) return res.status(401).json({ ok: false, error: 'invalid_credentials' })
 
   req.session.userId = user.id
-  res.json({ ok: true, user: { id: user.id, username: user.username } })
+  res.json({ ok: true, user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl } })
 })
 
 app.post('/api/auth/logout', (req, res) => {
@@ -1095,7 +1095,37 @@ app.get('/api/auth/me', async (req, res) => {
   const userId = req.session?.userId
   if (!userId) return res.json({ ok: true, user: null })
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true } })
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true, displayName: true, avatarUrl: true } })
+  res.json({ ok: true, user })
+})
+
+app.patch('/api/users/me', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const parsed = z
+    .object({
+      displayName: z.string().max(60).nullable().optional(),
+      avatarUrl: z.string().max(500).nullable().optional(),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const data = {}
+  if (Object.prototype.hasOwnProperty.call(parsed.data, 'displayName')) {
+    const v = parsed.data.displayName
+    data.displayName = typeof v === 'string' && v.trim() ? v.trim() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed.data, 'avatarUrl')) {
+    const v = parsed.data.avatarUrl
+    data.avatarUrl = typeof v === 'string' && v.trim() ? v.trim() : null
+  }
+  if (!Object.keys(data).length) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data,
+    select: { id: true, username: true, displayName: true, avatarUrl: true },
+  })
+
   res.json({ ok: true, user })
 })
 
@@ -1111,7 +1141,7 @@ app.post('/api/friends/requests', requireAuth, async (req, res) => {
   const uname = parsed.data.username.trim().toLowerCase()
   if (!uname) return res.status(400).json({ ok: false, error: 'invalid_payload' })
 
-  const toUser = await prisma.user.findUnique({ where: { username: uname }, select: { id: true, username: true } })
+  const toUser = await prisma.user.findUnique({ where: { username: uname }, select: { id: true, username: true, displayName: true, avatarUrl: true } })
   if (!toUser) return res.status(404).json({ ok: false, error: 'user_not_found' })
   if (toUser.id === fromId) return res.status(400).json({ ok: false, error: 'cannot_friend_self' })
 
@@ -1142,7 +1172,7 @@ app.post('/api/friends/requests', requireAuth, async (req, res) => {
     where: { fromId_toId: { fromId, toId: toUser.id } },
     create: { fromId, toId: toUser.id, status: 'PENDING' },
     update: { status: 'PENDING' },
-    select: { id: true, status: true, createdAt: true, to: { select: { id: true, username: true } } },
+    select: { id: true, status: true, createdAt: true, to: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
   })
 
   res.json({ ok: true, request })
@@ -1154,12 +1184,12 @@ app.get('/api/friends/requests', requireAuth, async (req, res) => {
   const incoming = await prisma.friendRequest.findMany({
     where: { toId: userId, status: 'PENDING' },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, status: true, createdAt: true, from: { select: { id: true, username: true } } },
+    select: { id: true, status: true, createdAt: true, from: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
   })
   const outgoing = await prisma.friendRequest.findMany({
     where: { fromId: userId, status: 'PENDING' },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, status: true, createdAt: true, to: { select: { id: true, username: true } } },
+    select: { id: true, status: true, createdAt: true, to: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
   })
 
   res.json({ ok: true, incoming, outgoing })
@@ -1223,14 +1253,14 @@ app.get('/api/friends', requireAuth, async (req, res) => {
     select: {
       id: true,
       createdAt: true,
-      userA: { select: { id: true, username: true } },
-      userB: { select: { id: true, username: true } },
+      userA: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      userB: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
     },
   })
 
   const friends = friendships.map((f) => {
     const other = f.userA.id === userId ? f.userB : f.userA
-    return { id: other.id, username: other.username, friendshipId: f.id, createdAt: f.createdAt }
+    return { id: other.id, username: other.username, displayName: other.displayName, avatarUrl: other.avatarUrl, friendshipId: f.id, createdAt: f.createdAt }
   })
 
   res.json({ ok: true, friends })
@@ -1264,8 +1294,8 @@ app.get('/api/dms/threads', requireAuth, async (req, res) => {
     select: {
       id: true,
       createdAt: true,
-      userA: { select: { id: true, username: true } },
-      userB: { select: { id: true, username: true } },
+      userA: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      userB: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
       messages: { select: { createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
     },
   })
@@ -1291,8 +1321,8 @@ app.get('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   const messages = await prisma.dmMessage.findMany({
     where: { threadId },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -1331,8 +1361,8 @@ app.get('/api/channels/:channelId/search', requireAuth, async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take: limit,
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1363,8 +1393,8 @@ app.get('/api/dms/:threadId/search', requireAuth, async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take: limit,
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1397,8 +1427,8 @@ app.post('/api/dms/:threadId/messages', requireAuth, async (req, res) => {
   const message = await prisma.dmMessage.create({
     data: { threadId, authorId: userId, content: parsed.data.content.trim(), replyToId },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1427,8 +1457,8 @@ app.patch('/api/messages/:messageId', requireAuth, async (req, res) => {
     where: { id: messageId },
     data: { content: parsed.data.content.trim(), editedAt: new Date() },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1452,8 +1482,8 @@ app.get('/api/channels/:channelId/pins', requireAuth, async (req, res) => {
     orderBy: { pinnedAt: 'desc' },
     take: limit,
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1507,8 +1537,8 @@ app.get('/api/dms/:threadId/pins', requireAuth, async (req, res) => {
     orderBy: { pinnedAt: 'desc' },
     take: limit,
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1563,8 +1593,8 @@ app.delete('/api/messages/:messageId', requireAuth, async (req, res) => {
     where: { id: messageId },
     data: { deletedAt: new Date(), content: '' },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1591,8 +1621,8 @@ app.patch('/api/dm-messages/:messageId', requireAuth, async (req, res) => {
     where: { id: messageId },
     data: { content: parsed.data.content.trim(), editedAt: new Date() },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1617,8 +1647,8 @@ app.delete('/api/dm-messages/:messageId', requireAuth, async (req, res) => {
     where: { id: messageId },
     data: { deletedAt: new Date(), content: '' },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
   })
@@ -1724,6 +1754,28 @@ app.get('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
   })
 
   res.json({ ok: true, channels })
+})
+
+app.get('/api/servers/:serverId/members', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { serverId } = req.params
+
+  const membership = await prisma.membership.findUnique({
+    where: { userId_serverId: { userId, serverId } },
+    select: { id: true },
+  })
+  if (!membership) return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const members = await prisma.membership.findMany({
+    where: { serverId },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      role: true,
+      user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+    },
+  })
+
+  res.json({ ok: true, members: members.map((m) => ({ id: m.user.id, username: m.user.username, displayName: m.user.displayName, avatarUrl: m.user.avatarUrl, role: m.role })) })
 })
 
 app.post('/api/servers/:serverId/channels', requireAuth, async (req, res) => {
@@ -1867,8 +1919,8 @@ app.get('/api/channels/:channelId/messages', requireAuth, async (req, res) => {
   const messages = await prisma.message.findMany({
     where: { channelId },
     include: {
-      author: { select: { id: true, username: true } },
-      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true } } } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      replyTo: { select: { id: true, content: true, author: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } },
       reactions: { select: { emoji: true, userId: true } },
     },
     orderBy: { createdAt: 'desc' },

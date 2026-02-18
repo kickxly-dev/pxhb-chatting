@@ -33,6 +33,8 @@ model User {
   lastSeenAt     DateTime?      @default(now())
 
   username     String       @unique
+  displayName  String?
+  avatarUrl    String?
   passwordHash String
 
   memberships  Membership[]
