@@ -1850,11 +1850,27 @@ function App() {
                     </ChannelButton>
                   ))
                 ) : (
-                  <div className="px-3 py-3 text-sm text-px-text2">
-                    Start a DM from
-                    {' '}
-                    <span className="font-semibold text-px-text">Friends</span>
-                    .
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs font-extrabold tracking-wide text-px-text2">DIRECT MESSAGES</div>
+                    <div className="mt-2 text-sm font-semibold text-px-text">Start a conversation</div>
+                    <div className="mt-1 text-sm text-px-text2">Open Friends and click DM to begin.</div>
+                    <div className="mt-3">
+                      <Button
+                        variant="secondary"
+                        className="h-9 w-full bg-white/5 text-px-text2 hover:bg-white/10"
+                        onClick={() => {
+                          if (!user) {
+                            setAuthMode('login')
+                            setAuthOpen(true)
+                            return
+                          }
+                          setFriendsOpen(true)
+                          refreshFriendsData()
+                        }}
+                      >
+                        Open Friends
+                      </Button>
+                    </div>
                   </div>
                 )
               ) : channels.length ? (
@@ -1961,12 +1977,12 @@ function App() {
                   </div>
                 </div>
               </div>
-              <div className="text-sm text-px-text2">
-                API: {apiHealth}
-                {' • '}
-                Socket: {socketConnected ? 'connected' : 'connecting…'}
-                {socketError ? ` (${socketError})` : ''}
-                {socketTarget ? ` @ ${socketTarget}` : ''}
+              <div className="hidden lg:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-px-text2">
+                <span>API: {apiHealth}</span>
+                <span className="text-white/15">|</span>
+                <span>Socket: {socketConnected ? 'connected' : 'connecting…'}</span>
+                {socketError ? <span className="text-red-300">({socketError})</span> : null}
+                {socketTarget ? <span className="text-px-text2">@ {socketTarget}</span> : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -3473,17 +3489,24 @@ function ChannelButton({
     <button
       className={
         active
-          ? 'w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-left shadow-soft transition-colors'
-          : 'w-full rounded-xl border border-transparent px-3 py-2 text-left text-px-text2 transition-colors hover:border-white/10 hover:bg-white/5'
+          ? 'group relative w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-left shadow-soft transition-colors'
+          : 'group relative w-full rounded-xl border border-transparent px-3 py-2 text-left text-px-text2 transition-colors hover:border-white/10 hover:bg-white/5'
       }
       type="button"
       onClick={onClick}
     >
+      <div
+        className={
+          active
+            ? 'absolute left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-px-brand'
+            : 'absolute left-1 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-white/10 opacity-0 transition-opacity group-hover:opacity-100'
+        }
+      />
       <div className="flex items-center gap-2">
         {leading ? <div className="shrink-0">{leading}</div> : null}
         <div className="min-w-0 flex-1">
-          <div className={active ? 'truncate text-sm font-extrabold text-px-text' : 'truncate text-sm font-bold'}>{children}</div>
-          {subtitle ? <div className={active ? 'truncate text-xs text-px-text2' : 'truncate text-xs text-px-text2/80'}>{subtitle}</div> : null}
+          <div className={active ? 'truncate text-sm font-extrabold text-px-text' : 'truncate text-sm font-semibold text-px-text'}>{children}</div>
+          {subtitle ? <div className={active ? 'truncate text-xs text-px-text2' : 'truncate text-xs text-px-text2'}>{subtitle}</div> : null}
         </div>
         {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>
