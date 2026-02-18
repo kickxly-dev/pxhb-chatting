@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
+import { Building, Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -35,7 +35,6 @@ import {
   apiCancelFriendRequest,
   apiCreateServer,
   apiCreateChannel,
-  apiCreateInvite,
   apiDeclineFriendRequest,
   apiDeleteChannel,
   apiDeleteDmMessage,
@@ -179,8 +178,6 @@ function App() {
   const [createServerBusy, setCreateServerBusy] = useState(false)
   const [createServerError, setCreateServerError] = useState<string | null>(null)
 
-  const [serverSettingsOpen, setServerSettingsOpen] = useState(false)
-  const [serverSettingsBusy, setServerSettingsBusy] = useState(false)
   const [serverSettingsError, setServerSettingsError] = useState<string | null>(null)
   const [serverSettingsName, setServerSettingsName] = useState('')
   const [serverSettingsIconUrl, setServerSettingsIconUrl] = useState('')
@@ -330,6 +327,65 @@ function App() {
   const updateNotificationSetting = (key: keyof typeof notificationSettings, value: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [key]: value }))
   }
+
+  const generateInviteCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    let code = ''
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return code
+  }
+
+  const createInvite = () => {
+    const code = generateInviteCode()
+    const newInvite = {
+      id: Date.now().toString(),
+      code,
+      createdBy: user?.username || 'unknown',
+      uses: 0,
+      maxUses: newInviteMaxUses,
+      expiresAt: newInviteExpires ? new Date(Date.now() + newInviteDays * 24 * 60 * 60 * 1000).toISOString() : null,
+      createdAt: new Date().toISOString()
+    }
+    setServerInvites(prev => [...prev, newInvite])
+    setNewInviteCode(code)
+    setNewInviteMaxUses(-1)
+    setNewInviteExpires(false)
+    setNewInviteDays(7)
+  }
+
+  const deleteInvite = (inviteId: string) => {
+    setServerInvites(prev => prev.filter(invite => invite.id !== inviteId))
+  }
+
+  const copyInviteCode = (code: string) => {
+    navigator.clipboard.writeText(code)
+  }
+
+  const isInviteExpired = (expiresAt: string | null) => {
+    if (!expiresAt) return false
+    return new Date(expiresAt) < new Date()
+  }
+
+  const getInviteStatus = (invite: any) => {
+    if (isInviteExpired(invite.expiresAt)) return { text: 'Expired', color: 'text-red-400' }
+    if (invite.maxUses > 0 && invite.uses >= invite.maxUses) return { text: 'Used', color: 'text-amber-400' }
+    return { text: 'Active', color: 'text-emerald-400' }
+  }
+
+  const updateServerSetting = (key: keyof typeof serverManageSettings, value: any) => {
+    setServerManageSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const saveServerSettings = () => {
+    setServerManageBusy(true)
+    // In a real app, this would save to backend
+    setTimeout(() => {
+      setServerManageBusy(false)
+      setServerManageOpen(false)
+    }, 1000)
+  }
   const [renameChannelBusy, setRenameChannelBusy] = useState(false)
   const [renameChannelError, setRenameChannelError] = useState<string | null>(null)
 
@@ -338,12 +394,32 @@ function App() {
   const [deleteChannelError, setDeleteChannelError] = useState<string | null>(null)
 
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteBusy, setInviteBusy] = useState(false)
-  const [inviteError, setInviteError] = useState<string | null>(null)
-  const [inviteCode, setInviteCode] = useState<string>('')
   const [joinCode, setJoinCode] = useState('')
   const [joinBusy, setJoinBusy] = useState(false)
   const [joinError, setJoinError] = useState<string | null>(null)
+  
+  // Enhanced invite management
+  const [serverInvites, setServerInvites] = useState([
+    { id: '1', code: 'ABC123', createdBy: 'admin', uses: 5, maxUses: 10, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() },
+    { id: '2', code: 'XYZ789', createdBy: 'user1', uses: 2, maxUses: -1, expiresAt: null, createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() }
+  ])
+  const [newInviteCode, setNewInviteCode] = useState('')
+  const [newInviteMaxUses, setNewInviteMaxUses] = useState(-1)
+  const [newInviteExpires, setNewInviteExpires] = useState(false)
+  const [newInviteDays, setNewInviteDays] = useState(7)
+
+  // Server management
+  const [serverManageOpen, setServerManageOpen] = useState(false)
+  const [serverManageSettings, setServerManageSettings] = useState({
+    name: '',
+    description: '',
+    icon: '',
+    isPublic: true,
+    allowInvites: true,
+    maxMembers: 100,
+    defaultRole: 'member'
+  })
+  const [serverManageBusy, setServerManageBusy] = useState(false)
 
   const [friendsOpen, setFriendsOpen] = useState(false)
   const [friendsBusy, setFriendsBusy] = useState(false)
@@ -1620,20 +1696,6 @@ function App() {
     }
   }
 
-  async function onCreateInvite() {
-    if (!user || !selectedServerId) return
-    setInviteBusy(true)
-    setInviteError(null)
-    try {
-      const res = await apiCreateInvite(selectedServerId)
-      setInviteCode(res.invite.code)
-    } catch (e) {
-      setInviteError(e instanceof Error ? e.message : 'invite_failed')
-    } finally {
-      setInviteBusy(false)
-    }
-  }
-
   async function onJoinInvite() {
     if (!user) {
       setAuthMode('login')
@@ -1721,7 +1783,7 @@ function App() {
     }
     if (!selectedServerId) return
 
-    setServerSettingsBusy(true)
+    setServerManageBusy(true)
     setServerSettingsError(null)
     try {
       const name = serverSettingsName.trim()
@@ -1736,13 +1798,13 @@ function App() {
 
       setServers((prev) => prev.map((s) => (s.id === res.server.id ? { ...s, ...res.server } : s)))
       pushToast('Server updated', res.server.name, 'success')
-      setServerSettingsOpen(false)
+      setServerManageOpen(false)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'update_failed'
       setServerSettingsError(msg)
       pushToast('Server update failed', msg, 'error')
     } finally {
-      setServerSettingsBusy(false)
+      setServerManageBusy(false)
     }
   }
 
@@ -1882,7 +1944,7 @@ function App() {
                   setServerSettingsName(s?.name || '')
                   setServerSettingsIconUrl(s?.iconUrl || '')
                   setServerSettingsError(null)
-                  setServerSettingsOpen(true)
+                  setServerManageOpen(true)
                 }}
               >
                 <Settings className="h-5 w-5" />
@@ -2232,6 +2294,17 @@ function App() {
                   <Settings className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
                   <span className="hidden lg:inline ml-1.5">Admin</span>
                 </Button>
+                {navMode === 'server' && selectedServerId && (
+                  <Button
+                    variant="secondary"
+                    className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                    onClick={() => setServerManageOpen(true)}
+                    disabled={!user}
+                  >
+                    <Building className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                    <span className="hidden lg:inline ml-1.5">Server</span>
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
@@ -2264,8 +2337,6 @@ function App() {
                 variant="secondary"
                 className="h-9 bg-white/5 text-px-text2 transition-all hover:bg-white/10 active:scale-[0.98]"
                 onClick={() => {
-                  setInviteError(null)
-                  setInviteCode('')
                   setJoinError(null)
                   setInviteOpen(true)
                 }}
@@ -2367,8 +2438,6 @@ function App() {
                         variant="secondary"
                         className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
                         onClick={() => {
-                          setInviteError(null)
-                          setInviteCode('')
                           setJoinError(null)
                           setInviteOpen(true)
                         }}
@@ -3649,6 +3718,135 @@ function App() {
         </DialogContent>
       </Dialog>
 
+      {/* Server Management Dialog */}
+      <Dialog open={serverManageOpen} onOpenChange={setServerManageOpen}>
+        <DialogContent className="bg-px-panel border-white/10 text-px-text max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Server Settings</DialogTitle>
+            <DialogDescription>Manage server configuration and preferences</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Basic Settings */}
+            <div className="space-y-4">
+              <div className="text-xs font-extrabold tracking-wide text-px-text2">BASIC SETTINGS</div>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Server Name</label>
+                  <Input
+                    value={serverManageSettings.name}
+                    onChange={(e) => updateServerSetting('name', e.target.value)}
+                    placeholder="Enter server name..."
+                    className="border-white/10 bg-white/6 text-px-text placeholder:text-px-text2/50"
+                  />
+                </div>
+                
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Description</label>
+                  <textarea
+                    value={serverManageSettings.description}
+                    onChange={(e) => updateServerSetting('description', e.target.value)}
+                    placeholder="Describe your server..."
+                    className="w-full rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-px-text placeholder:text-px-text2/50 min-h-[80px]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Server Icon URL</label>
+                  <Input
+                    value={serverManageSettings.icon}
+                    onChange={(e) => updateServerSetting('icon', e.target.value)}
+                    placeholder="https://example.com/icon.png"
+                    className="border-white/10 bg-white/6 text-px-text placeholder:text-px-text2/50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Access Settings */}
+            <div className="space-y-4">
+              <div className="text-xs font-extrabold tracking-wide text-px-text2">ACCESS SETTINGS</div>
+              
+              <div className="space-y-3">
+                <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                  <div>
+                    <div className="text-sm font-medium text-px-text">Public Server</div>
+                    <div className="text-xs text-px-text2/70">Allow anyone to discover and join</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={serverManageSettings.isPublic}
+                    onChange={(e) => updateServerSetting('isPublic', e.target.checked)}
+                    className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer hover:bg-white/10">
+                  <div>
+                    <div className="text-sm font-medium text-px-text">Allow Invites</div>
+                    <div className="text-xs text-px-text2/70">Members can create invite codes</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={serverManageSettings.allowInvites}
+                    onChange={(e) => updateServerSetting('allowInvites', e.target.checked)}
+                    className="rounded border-white/20 bg-white/10 text-px-brand focus:ring-px-brand/40"
+                  />
+                </label>
+
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Maximum Members</label>
+                  <select
+                    value={serverManageSettings.maxMembers}
+                    onChange={(e) => updateServerSetting('maxMembers', Number(e.target.value))}
+                    className="w-full rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-px-text"
+                  >
+                    <option value={50}>50 members</option>
+                    <option value={100}>100 members</option>
+                    <option value={250}>250 members</option>
+                    <option value={500}>500 members</option>
+                    <option value={1000}>1000 members</option>
+                    <option value={-1}>Unlimited</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Default Role</label>
+                  <select
+                    value={serverManageSettings.defaultRole}
+                    onChange={(e) => updateServerSetting('defaultRole', e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-px-text"
+                  >
+                    {roles.map(role => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                className="bg-px-brand text-white hover:bg-px-brand/90"
+                onClick={saveServerSettings}
+                disabled={serverManageBusy}
+              >
+                {serverManageBusy ? 'Saving...' : 'Save Changes'}
+              </Button>
+              <Button
+                variant="secondary"
+                className="bg-white/10 text-px-text hover:bg-white/15"
+                onClick={() => setServerManageOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={friendsOpen}
         onOpenChange={(o) => {
@@ -3944,44 +4142,166 @@ function App() {
         onOpenChange={(o) => {
           setInviteOpen(o)
           if (!o) {
-            setInviteError(null)
-            setInviteCode('')
             setJoinError(null)
           }
         }}
       >
-        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+        <DialogContent className="border-white/10 bg-px-panel text-px-text max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Invites</DialogTitle>
-            <DialogDescription className="text-px-text2">Create an invite link or join using a code.</DialogDescription>
+            <DialogTitle>Server Invites</DialogTitle>
+            <DialogDescription className="text-px-text2">Manage invite codes and server access</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div className="flex items-center gap-2">
-              <Button
-                className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
-                onClick={onCreateInvite}
-                disabled={!selectedServerId || inviteBusy}
-              >
-                {inviteBusy ? 'Creating…' : 'Create invite'}
-              </Button>
-              {inviteCode ? <div className="text-sm text-px-text2">Code: {inviteCode}</div> : null}
+          
+          <div className="space-y-6">
+            {/* Create New Invite */}
+            <div className="rounded-xl border border-white/8 bg-white/4 p-4">
+              <div className="text-sm font-semibold text-px-text mb-4">Create New Invite</div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Max Uses</label>
+                  <select
+                    value={newInviteMaxUses}
+                    onChange={(e) => setNewInviteMaxUses(Number(e.target.value))}
+                    className="w-full rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-px-text"
+                  >
+                    <option value="-1">Unlimited</option>
+                    <option value="1">1 use</option>
+                    <option value="5">5 uses</option>
+                    <option value="10">10 uses</option>
+                    <option value="25">25 uses</option>
+                    <option value="50">50 uses</option>
+                    <option value="100">100 uses</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-px-text2/80 block mb-1">Expires</label>
+                  <select
+                    value={newInviteExpires ? newInviteDays : 0}
+                    onChange={(e) => {
+                      const days = Number(e.target.value)
+                      setNewInviteExpires(days > 0)
+                      setNewInviteDays(days)
+                    }}
+                    className="w-full rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-px-text"
+                  >
+                    <option value="0">Never</option>
+                    <option value="1">1 day</option>
+                    <option value="7">7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="90">90 days</option>
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <Button
+                    className="h-10 bg-px-brand text-white hover:bg-px-brand/90"
+                    onClick={createInvite}
+                    disabled={!user}
+                  >
+                    Generate Invite Code
+                  </Button>
+                </div>
+              </div>
+              {newInviteCode && (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-medium text-px-text2/80 mb-1">Generated Code</div>
+                      <div className="font-mono text-lg font-bold text-px-text">{newInviteCode}</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-px-brand hover:bg-px-brand/10"
+                      onClick={() => copyInviteCode(newInviteCode)}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
-            {inviteError ? <div className="text-sm font-semibold text-red-400">{inviteError}</div> : null}
-            <Separator className="bg-white/10" />
-            <div className="grid gap-2">
-              <Input
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="Invite code"
-                className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onJoinInvite()
-                }}
-              />
-              <Button className="h-9 bg-white/10 text-px-text hover:bg-white/15" onClick={onJoinInvite} disabled={joinBusy}>
-                {joinBusy ? 'Joining…' : 'Join server'}
-              </Button>
-              {joinError ? <div className="text-sm font-semibold text-red-400">{joinError}</div> : null}
+
+            {/* Active Invites */}
+            <div>
+              <div className="text-sm font-semibold text-px-text mb-3">Active Invites</div>
+              {serverInvites.length === 0 ? (
+                <div className="rounded-lg border border-white/8 bg-white/4 p-6 text-center">
+                  <div className="text-px-text2/70">No active invites</div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {serverInvites.map((invite) => {
+                    const status = getInviteStatus(invite)
+                    return (
+                      <div key={invite.id} className="rounded-lg border border-white/8 bg-white/4 p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                              <div>
+                                <div className="font-mono text-sm font-bold text-px-text">{invite.code}</div>
+                                <div className={`text-xs font-medium ${status.color}`}>
+                                  {status.text}
+                                </div>
+                              </div>
+                              <div className="text-xs text-px-text2/60">
+                                Created by {invite.createdBy} • {new Date(invite.createdAt).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div className="text-xs text-px-text2/60">
+                              {invite.maxUses === -1 ? 'Unlimited uses' : `${invite.uses}/${invite.maxUses} uses`}
+                              {invite.expiresAt && ` • Expires ${new Date(invite.expiresAt).toLocaleDateString()}`}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-px-brand hover:bg-px-brand/10"
+                              onClick={() => copyInviteCode(invite.code)}
+                            >
+                              Copy
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-400 hover:bg-red-400/10"
+                              onClick={() => deleteInvite(invite.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Join Server */}
+            <div className="rounded-xl border border-white/8 bg-white/4 p-4">
+              <div className="text-sm font-semibold text-px-text mb-4">Join Server</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <Input
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value)}
+                    placeholder="Enter invite code..."
+                    className="border-white/10 bg-white/6 text-px-text placeholder:text-px-text2/50"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onJoinInvite()
+                    }}
+                  />
+                </div>
+                <Button
+                  className="h-10 bg-px-brand text-white hover:bg-px-brand/90"
+                  onClick={onJoinInvite}
+                  disabled={joinBusy || !joinCode.trim()}
+                >
+                  {joinBusy ? 'Joining…' : 'Join Server'}
+                </Button>
+              </div>
+              {joinError && <div className="text-sm font-medium text-red-400 mt-3">{joinError}</div>}
             </div>
           </div>
         </DialogContent>
@@ -4039,11 +4359,11 @@ function App() {
       </Dialog>
 
       <Dialog
-        open={serverSettingsOpen}
+        open={serverManageOpen}
         onOpenChange={(o) => {
-          setServerSettingsOpen(o)
+          setServerManageOpen(o)
           if (!o) {
-            setServerSettingsBusy(false)
+            setServerManageBusy(false)
             setServerSettingsError(null)
           }
         }}
@@ -4074,17 +4394,17 @@ function App() {
             <Button
               variant="secondary"
               className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
-              onClick={() => setServerSettingsOpen(false)}
-              disabled={serverSettingsBusy}
+              onClick={() => setServerManageOpen(false)}
+              disabled={serverManageBusy}
             >
               Cancel
             </Button>
             <Button
               className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
               onClick={onSaveServerSettings}
-              disabled={serverSettingsBusy}
+              disabled={serverManageBusy}
             >
-              {serverSettingsBusy ? 'Saving…' : 'Save'}
+              {serverManageBusy ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>
