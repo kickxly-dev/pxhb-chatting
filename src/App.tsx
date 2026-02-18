@@ -150,6 +150,17 @@ function App() {
   const [adminAllowedOriginsText, setAdminAllowedOriginsText] = useState('')
   const [adminCspEnabled, setAdminCspEnabled] = useState<boolean>(true)
 
+  // New Equinox vNext controls
+  const [adminRateLimitEnabled, setAdminRateLimitEnabled] = useState(true)
+  const [adminRateLimitWindowMs, setAdminRateLimitWindowMs] = useState(60000)
+  const [adminRateLimitAuthMax, setAdminRateLimitAuthMax] = useState(20)
+  const [adminRateLimitAdminMax, setAdminRateLimitAdminMax] = useState(6)
+  const [adminRateLimitApiMax, setAdminRateLimitApiMax] = useState(240)
+  const [adminSessionCookieSameSite, setAdminSessionCookieSameSite] = useState<'lax' | 'strict' | 'none'>('lax')
+  const [adminSessionCookieSecure, setAdminSessionCookieSecure] = useState<'auto' | 'true' | 'false'>('auto')
+  const [adminSessionCookieMaxAgeMs, setAdminSessionCookieMaxAgeMs] = useState(1209600000)
+  const [adminLockdownEnabled, setAdminLockdownEnabled] = useState(false)
+
   const [pinsOpen, setPinsOpen] = useState(false)
   const [pinsBusy, setPinsBusy] = useState(false)
   const [pinsError, setPinsError] = useState<string | null>(null)
@@ -502,6 +513,15 @@ function App() {
       setAdminSecurity(sec.security)
       setAdminAllowedOriginsText((sec.security.allowedOrigins || []).join('\n'))
       setAdminCspEnabled(!!sec.security.cspEnabled)
+      setAdminRateLimitEnabled(!!sec.security.rateLimitEnabled)
+      setAdminRateLimitWindowMs(sec.security.rateLimitWindowMs)
+      setAdminRateLimitAuthMax(sec.security.rateLimitAuthMax)
+      setAdminRateLimitAdminMax(sec.security.rateLimitAdminMax)
+      setAdminRateLimitApiMax(sec.security.rateLimitApiMax)
+      setAdminSessionCookieSameSite(sec.security.sessionCookieSameSite)
+      setAdminSessionCookieSecure(sec.security.sessionCookieSecure)
+      setAdminSessionCookieMaxAgeMs(sec.security.sessionCookieMaxAgeMs)
+      setAdminLockdownEnabled(!!sec.security.lockdownEnabled)
     } catch (e) {
       setAdminError(e instanceof Error ? e.message : 'admin_refresh_failed')
     } finally {
@@ -519,10 +539,31 @@ function App() {
         .map((s) => s.trim())
         .filter(Boolean)
         .slice(0, 100)
-      const res = await apiAdminUpdateSecurity({ allowedOrigins, cspEnabled: adminCspEnabled })
+      const res = await apiAdminUpdateSecurity({
+        allowedOrigins,
+        cspEnabled: adminCspEnabled,
+        rateLimitEnabled: adminRateLimitEnabled,
+        rateLimitWindowMs: adminRateLimitWindowMs,
+        rateLimitAuthMax: adminRateLimitAuthMax,
+        rateLimitAdminMax: adminRateLimitAdminMax,
+        rateLimitApiMax: adminRateLimitApiMax,
+        sessionCookieSameSite: adminSessionCookieSameSite,
+        sessionCookieSecure: adminSessionCookieSecure,
+        sessionCookieMaxAgeMs: adminSessionCookieMaxAgeMs,
+        lockdownEnabled: adminLockdownEnabled,
+      })
       setAdminSecurity(res.security)
       setAdminAllowedOriginsText((res.security.allowedOrigins || []).join('\n'))
       setAdminCspEnabled(!!res.security.cspEnabled)
+      setAdminRateLimitEnabled(!!res.security.rateLimitEnabled)
+      setAdminRateLimitWindowMs(res.security.rateLimitWindowMs)
+      setAdminRateLimitAuthMax(res.security.rateLimitAuthMax)
+      setAdminRateLimitAdminMax(res.security.rateLimitAdminMax)
+      setAdminRateLimitApiMax(res.security.rateLimitApiMax)
+      setAdminSessionCookieSameSite(res.security.sessionCookieSameSite)
+      setAdminSessionCookieSecure(res.security.sessionCookieSecure)
+      setAdminSessionCookieMaxAgeMs(res.security.sessionCookieMaxAgeMs)
+      setAdminLockdownEnabled(!!res.security.lockdownEnabled)
       pushToast('Equinox', 'Security settings updated', 'success')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'security_update_failed'
@@ -2680,7 +2721,132 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="text-xs font-extrabold text-px-text2">RATE LIMITS & SESSION POLICY</div>
+                  <div className="mt-3 grid gap-3">
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs font-extrabold text-px-text2">Rate Limiting</div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <div className={adminRateLimitEnabled ? 'text-sm font-extrabold text-emerald-300' : 'text-sm font-extrabold text-amber-300'}>
+                            {adminRateLimitEnabled ? 'ON' : 'OFF'}
+                          </div>
+                          <Button variant="secondary" className="h-8 bg-white/5 text-px-text2 hover:bg-white/10" onClick={() => setAdminRateLimitEnabled((v) => !v)}>
+                            Toggle
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <div className="text-xs font-extrabold text-px-text2">Window (ms)</div>
+                          <input
+                            type="number"
+                            min={1000}
+                            max={600000}
+                            value={adminRateLimitWindowMs}
+                            onChange={(e) => setAdminRateLimitWindowMs(Number(e.target.value))}
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                          />
+                        </div>
+                        <div>
+                          <div className="text-xs font-extrabold text-px-text2">Auth Max</div>
+                          <input
+                            type="number"
+                            min={1}
+                            max={1000}
+                            value={adminRateLimitAuthMax}
+                            onChange={(e) => setAdminRateLimitAuthMax(Number(e.target.value))}
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                          />
+                        </div>
+                        <div>
+                          <div className="text-xs font-extrabold text-px-text2">Admin Max</div>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={adminRateLimitAdminMax}
+                            onChange={(e) => setAdminRateLimitAdminMax(Number(e.target.value))}
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-extrabold text-px-text2">API Max</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={10000}
+                          value={adminRateLimitApiMax}
+                          onChange={(e) => setAdminRateLimitApiMax(Number(e.target.value))}
+                          className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs font-extrabold text-px-text2">Session Cookie</div>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          <div>
+                            <div className="text-xs font-extrabold text-px-text2">SameSite</div>
+                            <select
+                              value={adminSessionCookieSameSite}
+                              onChange={(e) => setAdminSessionCookieSameSite(e.target.value as 'lax' | 'strict' | 'none')}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                            >
+                              <option value="lax">Lax</option>
+                              <option value="strict">Strict</option>
+                              <option value="none">None</option>
+                            </select>
+                          </div>
+                          <div>
+                            <div className="text-xs font-extrabold text-px-text2">Secure</div>
+                            <select
+                              value={adminSessionCookieSecure}
+                              onChange={(e) => setAdminSessionCookieSecure(e.target.value as 'auto' | 'true' | 'false')}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                            >
+                              <option value="auto">Auto</option>
+                              <option value="true">True</option>
+                              <option value="false">False</option>
+                            </select>
+                          </div>
+                          <div>
+                            <div className="text-xs font-extrabold text-px-text2">Max Age (ms)</div>
+                            <input
+                              type="number"
+                              min={1000}
+                              max={1209600000}
+                              value={adminSessionCookieMaxAgeMs}
+                              onChange={(e) => setAdminSessionCookieMaxAgeMs(Number(e.target.value))}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-px-text outline-none focus:ring-2 focus:ring-px-brand/40"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-xs font-extrabold text-px-text2">LOCKDOWN MODE</div>
+                      <div className="mt-2 text-xs text-px-text2">Blocks all non-admin traffic (except health/admin unlock/login).</div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className={adminLockdownEnabled ? 'text-sm font-extrabold text-red-400' : 'text-sm font-extrabold text-emerald-300'}>
+                          {adminLockdownEnabled ? 'LOCKED' : 'UNLOCKED'}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          className={adminLockdownEnabled ? 'h-8 bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'h-8 bg-white/5 text-px-text2 hover:bg-white/10'}
+                          onClick={() => setAdminLockdownEnabled((v) => !v)}
+                        >
+                          {adminLockdownEnabled ? 'Unlock' : 'Lock'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-extrabold text-px-text2">RENDER ENV SNIPPET</div>
                       <div className="mt-1 truncate font-mono text-xs text-px-text2">ALLOWED_ORIGINS=&quot;https://yourdomain&quot;</div>
