@@ -330,3 +330,7 @@ export type AdminSecurity = {
 export async function apiAdminSecurity() {
   return apiFetch<{ security: AdminSecurity }>('/api/admin/security')
 }
+
+export async function apiAdminUpdateSecurity(payload: { allowedOrigins?: string[]; cspEnabled?: boolean }) {
+  return apiFetch<{ security: AdminSecurity }>('/api/admin/security', { method: 'PATCH', body: JSON.stringify(payload) })
+}

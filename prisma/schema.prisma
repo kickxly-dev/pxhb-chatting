@@ -59,6 +59,15 @@ model User {
   auditLogs AuditLog[]
 }
 
+model SecurityConfig {
+  id String @id @default("default")
+
+  allowedOrigins String[]
+  cspEnabled     Boolean  @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
 enum PresenceStatus {
   ONLINE
   IDLE

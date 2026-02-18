@@ -25,41 +25,72 @@ const httpServer = http.createServer(app)
 const isProd = process.env.NODE_ENV === 'production'
 const port = Number(process.env.PORT || 3000)
 const adminCode = process.env.ADMIN_CODE || ''
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+const envAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
 
-const cspEnabled = isProd && process.env.CSP_ENABLED !== 'false'
+const envCspEnabled = isProd && process.env.CSP_ENABLED !== 'false'
+
+let runtimeAllowedOrigins = [...envAllowedOrigins]
+let runtimeCspEnabled = envCspEnabled
+
+async function loadSecurityConfig() {
+  try {
+    const row = await prisma.securityConfig.findUnique({ where: { id: 'default' } })
+    if (!row) {
+      const created = await prisma.securityConfig.create({
+        data: { id: 'default', allowedOrigins: envAllowedOrigins, cspEnabled: envCspEnabled },
+      })
+      runtimeAllowedOrigins = [...created.allowedOrigins]
+      runtimeCspEnabled = created.cspEnabled
+      return
+    }
+
+    runtimeAllowedOrigins = Array.isArray(row.allowedOrigins) ? row.allowedOrigins.filter(Boolean) : []
+    runtimeCspEnabled = !!row.cspEnabled
+
+    // If DB is still empty but env has values, seed it once (helps first deploy)
+    if (runtimeAllowedOrigins.length === 0 && envAllowedOrigins.length) {
+      const updated = await prisma.securityConfig.update({
+        where: { id: 'default' },
+        data: { allowedOrigins: envAllowedOrigins, cspEnabled: envCspEnabled },
+      })
+      runtimeAllowedOrigins = [...updated.allowedOrigins]
+      runtimeCspEnabled = updated.cspEnabled
+    }
+  } catch {
+    // fall back to env
+    runtimeAllowedOrigins = [...envAllowedOrigins]
+    runtimeCspEnabled = envCspEnabled
+  }
+}
+
+await loadSecurityConfig()
 
 app.set('trust proxy', 1)
 
 app.use(
   helmet({
-    contentSecurityPolicy: cspEnabled
-      ? {
-          useDefaults: true,
-          directives: {
-            defaultSrc: ["'self'"],
-            baseUri: ["'self'"],
-            objectSrc: ["'none'"],
-            frameAncestors: ["'none'"],
-            imgSrc: ["'self'", 'data:', 'blob:'],
-            fontSrc: ["'self'", 'data:'],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'"],
-            connectSrc: ["'self'", 'ws:', 'wss:'],
-          },
-        }
-      : false,
+    contentSecurityPolicy: false,
   }),
 )
+
+const cspPolicy =
+  "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:"
+
+app.use((req, res, next) => {
+  if (isProd && runtimeCspEnabled) {
+    res.setHeader('Content-Security-Policy', cspPolicy)
+  }
+  next()
+})
 
 function corsOrigin(origin, cb) {
   if (!origin) return cb(null, true)
   if (!isProd) return cb(null, true)
-  if (allowedOrigins.length === 0) return cb(null, false)
-  if (allowedOrigins.includes(origin)) return cb(null, true)
+  if (runtimeAllowedOrigins.length === 0) return cb(null, false)
+  if (runtimeAllowedOrigins.includes(origin)) return cb(null, true)
   return cb(null, false)
 }
 
@@ -79,7 +110,7 @@ app.use((req, res, next) => {
 
   const origin = req.get('origin') || ''
   if (!origin) return res.status(403).json({ ok: false, error: 'origin_required' })
-  if (allowedOrigins.length === 0 || !allowedOrigins.includes(origin)) {
+  if (runtimeAllowedOrigins.length === 0 || !runtimeAllowedOrigins.includes(origin)) {
     return res.status(403).json({ ok: false, error: 'origin_forbidden' })
   }
   next()
@@ -982,8 +1013,56 @@ app.get('/api/admin/security', requireAuth, requireAdmin, async (req, res) => {
     security: {
       nodeEnv: process.env.NODE_ENV || 'unknown',
       isProd,
-      cspEnabled,
-      allowedOrigins,
+      cspEnabled: runtimeCspEnabled,
+      allowedOrigins: runtimeAllowedOrigins,
+    },
+  })
+})
+
+app.patch('/api/admin/security', requireAuth, requireAdmin, async (req, res) => {
+  const parsed = z
+    .object({
+      allowedOrigins: z.array(z.string().min(1).max(300)).max(100).optional(),
+      cspEnabled: z.boolean().optional(),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const data = {}
+  if (Array.isArray(parsed.data.allowedOrigins)) {
+    const cleaned = parsed.data.allowedOrigins
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 100)
+    data.allowedOrigins = cleaned
+  }
+  if (typeof parsed.data.cspEnabled === 'boolean') {
+    data.cspEnabled = parsed.data.cspEnabled
+  }
+  if (!Object.keys(data).length) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const updated = await prisma.securityConfig.upsert({
+    where: { id: 'default' },
+    create: { id: 'default', allowedOrigins: data.allowedOrigins || [], cspEnabled: data.cspEnabled ?? true },
+    update: data,
+  })
+
+  runtimeAllowedOrigins = [...updated.allowedOrigins]
+  runtimeCspEnabled = !!updated.cspEnabled
+
+  await audit('admin.security_update', req.session.userId, {
+    allowedOriginsCount: runtimeAllowedOrigins.length,
+    cspEnabled: runtimeCspEnabled,
+    ip: req.ip,
+  })
+
+  res.json({
+    ok: true,
+    security: {
+      nodeEnv: process.env.NODE_ENV || 'unknown',
+      isProd,
+      cspEnabled: runtimeCspEnabled,
+      allowedOrigins: runtimeAllowedOrigins,
     },
   })
 })

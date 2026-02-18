@@ -29,6 +29,7 @@ import {
   apiAdminMe,
   apiAdminOverview,
   apiAdminSecurity,
+  apiAdminUpdateSecurity,
   apiAdminServers,
   apiAdminUsers,
   apiCancelFriendRequest,
@@ -143,6 +144,11 @@ function App() {
   const [adminServers, setAdminServers] = useState<AdminServer[]>([])
   const [adminAudit, setAdminAudit] = useState<AdminAuditLog[]>([])
   const [adminSecurity, setAdminSecurity] = useState<AdminSecurity | null>(null)
+
+  const [adminSecurityBusy, setAdminSecurityBusy] = useState(false)
+  const [adminSecurityError, setAdminSecurityError] = useState<string | null>(null)
+  const [adminAllowedOriginsText, setAdminAllowedOriginsText] = useState('')
+  const [adminCspEnabled, setAdminCspEnabled] = useState<boolean>(true)
 
   const [pinsOpen, setPinsOpen] = useState(false)
   const [pinsBusy, setPinsBusy] = useState(false)
@@ -480,10 +486,36 @@ function App() {
 
       const sec = await apiAdminSecurity()
       setAdminSecurity(sec.security)
+      setAdminAllowedOriginsText((sec.security.allowedOrigins || []).join('\n'))
+      setAdminCspEnabled(!!sec.security.cspEnabled)
     } catch (e) {
       setAdminError(e instanceof Error ? e.message : 'admin_refresh_failed')
     } finally {
       setAdminBusy(false)
+    }
+  }
+
+  async function onSaveAdminSecurity() {
+    if (!user || !adminAuthed) return
+    setAdminSecurityBusy(true)
+    setAdminSecurityError(null)
+    try {
+      const allowedOrigins = adminAllowedOriginsText
+        .split(/\r?\n|,/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 100)
+      const res = await apiAdminUpdateSecurity({ allowedOrigins, cspEnabled: adminCspEnabled })
+      setAdminSecurity(res.security)
+      setAdminAllowedOriginsText((res.security.allowedOrigins || []).join('\n'))
+      setAdminCspEnabled(!!res.security.cspEnabled)
+      pushToast('Equinox', 'Security settings updated', 'success')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'security_update_failed'
+      setAdminSecurityError(msg)
+      pushToast('Equinox', msg, 'error')
+    } finally {
+      setAdminSecurityBusy(false)
     }
   }
 
@@ -2461,6 +2493,67 @@ function App() {
                     >
                       Copy
                     </Button>
+                  </div>
+
+                  <div className="mt-3 grid gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs font-extrabold text-px-text2">CSP TOGGLE</div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <div className={adminCspEnabled ? 'text-sm font-extrabold text-emerald-300' : 'text-sm font-extrabold text-amber-300'}>
+                            {adminCspEnabled ? 'ON' : 'OFF'}
+                          </div>
+                          <Button
+                            variant="secondary"
+                            className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                            onClick={() => setAdminCspEnabled((v) => !v)}
+                          >
+                            Toggle
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs font-extrabold text-px-text2">NOTES</div>
+                        <div className="mt-1 text-xs text-px-text2">
+                          Origins apply immediately. CSP header applies immediately.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-extrabold text-px-text2">EDIT ORIGINS (one per line)</div>
+                      <textarea
+                        value={adminAllowedOriginsText}
+                        onChange={(e) => setAdminAllowedOriginsText(e.target.value)}
+                        rows={4}
+                        className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-px-text placeholder:text-px-text2 outline-none focus:ring-2 focus:ring-px-brand/40"
+                        placeholder="https://yourdomain.com\nhttps://www.yourdomain.com"
+                      />
+                    </div>
+
+                    {adminSecurityError ? <div className="text-sm font-semibold text-red-400">{adminSecurityError}</div> : null}
+
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="secondary"
+                        className="h-8 bg-white/5 text-px-text2 hover:bg-white/10"
+                        onClick={() => {
+                          setAdminAllowedOriginsText((adminSecurity?.allowedOrigins || []).join('\n'))
+                          setAdminCspEnabled(!!adminSecurity?.cspEnabled)
+                          setAdminSecurityError(null)
+                        }}
+                        disabled={!adminSecurity || adminSecurityBusy}
+                      >
+                        Reset
+                      </Button>
+                      <Button
+                        className="h-8 bg-px-brand text-white hover:bg-px-brand/90"
+                        onClick={onSaveAdminSecurity}
+                        disabled={!adminSecurity || adminSecurityBusy}
+                      >
+                        {adminSecurityBusy ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between gap-3">
