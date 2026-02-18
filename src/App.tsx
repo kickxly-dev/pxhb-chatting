@@ -909,13 +909,6 @@ function App() {
 
     s.on('site:config', (cfg: { lockdownEnabled: boolean; lockdownMessage: string }) => {
       setSiteConfig(cfg)
-      if (cfg.lockdownEnabled && !adminAuthed) {
-        try {
-          s.disconnect()
-        } catch {
-          // ignore
-        }
-      }
     })
 
     s.on('presence:changed', (payload: { userId: string; status: PresenceStatus; lastSeenAt: string | null }) => {
@@ -1062,6 +1055,19 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedChannelId])
+
+  useEffect(() => {
+    if (!user) return
+    if (siteConfig?.lockdownEnabled) return
+    const s = socketRef.current
+    if (!s) return
+    if (socketConnected) return
+    try {
+      s.connect()
+    } catch {
+      // ignore
+    }
+  }, [user, siteConfig?.lockdownEnabled, socketConnected])
 
   useEffect(() => {
     if (!user) return
@@ -1568,7 +1574,12 @@ function App() {
   }
 
   return (
-    <div className="h-full w-full bg-px-bg">
+    <div className="relative h-full w-full bg-px-bg">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-48 left-1/2 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.22),transparent_62%)] blur-2xl" />
+        <div className="absolute -bottom-64 right-[-180px] h-[620px] w-[620px] rounded-full bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.10),transparent_64%)] blur-2xl" />
+        <div className="absolute inset-0 opacity-30 [background:radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_55%)]" />
+      </div>
       <div className="pointer-events-none fixed right-4 top-4 z-50 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2">
         {toasts.map((t) => (
           <div
@@ -1576,9 +1587,9 @@ function App() {
             className={
               t.tone === 'success'
                 ? 'pointer-events-auto rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 shadow-soft'
-                : t.tone === 'error'
+              : t.tone === 'error'
                   ? 'pointer-events-auto rounded-2xl border border-red-500/30 bg-red-500/10 p-3 shadow-soft'
-                  : 'pointer-events-auto rounded-2xl border border-white/10 bg-white/5 p-3 shadow-soft'
+                  : 'pointer-events-auto rounded-2xl border border-white/10 bg-px-panel/80 p-3 shadow-soft backdrop-blur'
             }
           >
             <div className="text-sm font-extrabold text-px-text">{t.title}</div>
@@ -1587,10 +1598,12 @@ function App() {
         ))}
       </div>
 
-      <div className="grid h-full w-full grid-cols-[72px_260px_1fr_280px]">
-        <aside className="bg-px-rail border-r border-white/10 p-2">
+      <div className="relative grid h-full w-full grid-cols-[72px_280px_1fr_320px] max-lg:grid-cols-[72px_280px_1fr]">
+        <aside className="bg-px-rail border-r border-white/5 p-2">
           <div className="flex h-full flex-col items-center gap-2">
-            <div className="h-12 w-12 rounded-2xl bg-px-brand/90 shadow-soft grid place-items-center font-black">PX</div>
+            <div className="h-12 w-12 rounded-2xl bg-[linear-gradient(180deg,rgba(239,68,68,0.95),rgba(239,68,68,0.65))] shadow-soft grid place-items-center font-black ring-1 ring-white/10">
+              PX
+            </div>
 
             <button
               type="button"
@@ -1643,7 +1656,7 @@ function App() {
               <Plus className="h-5 w-5" />
             </Button>
             <div className="mt-auto grid w-full place-items-center gap-2 pb-1">
-              <div className="h-12 w-12 rounded-2xl bg-white/10 grid place-items-center text-sm text-px-text2">
+              <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 grid place-items-center text-sm text-px-text2 hover:bg-white/10 transition-colors">
                 <Settings className="h-5 w-5" />
               </div>
               <div className="text-[10px] font-extrabold tracking-wide text-px-text2">Protected by Equinox V1</div>
@@ -1651,10 +1664,10 @@ function App() {
           </div>
         </aside>
 
-        <aside className="bg-px-panel border-r border-white/10 flex h-full flex-col animate-in fade-in duration-200">
+        <aside className="bg-px-panel border-r border-white/5 flex h-full flex-col animate-in fade-in duration-200">
           <div className="p-3">
             <div className="mb-3 flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-white/10" />
+              <div className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10" />
               <div className="min-w-0">
                 <div className="truncate font-extrabold">PXHB Chatting</div>
                 <div className="truncate text-xs text-px-text2">
@@ -1850,7 +1863,7 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="flex h-14 items-center justify-between border-b border-white/10 px-4">
+          <header className="flex h-14 items-center justify-between border-b border-white/5 px-4">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-white/10 grid place-items-center">
@@ -1994,16 +2007,32 @@ function App() {
           </header>
 
           <ScrollArea className="flex-1">
-            <div className="p-4">
-              <div className="mx-auto flex max-w-3xl flex-col gap-3">
+            <div className="p-6">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
                 {!user ? (
-                  <Message who="System" text="Login to load your servers and start chatting." tone="system" />
+                  <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
+                    <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">WELCOME</div>
+                    <div className="mt-2 text-2xl font-black text-px-text">Sign in to start chatting</div>
+                    <div className="mt-2 text-sm text-px-text2">Your messages, servers, and friends will load after you login.</div>
+                  </div>
                 ) : navMode === 'server' && servers.length === 0 ? (
-                  <Message who="System" text="You have no servers yet. Click the + in the left rail to create one." tone="system" />
+                  <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
+                    <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">NO SERVERS</div>
+                    <div className="mt-2 text-2xl font-black text-px-text">Create your first server</div>
+                    <div className="mt-2 text-sm text-px-text2">Use the + button in the left rail to create a server and invite friends.</div>
+                  </div>
                 ) : navMode === 'server' && !selectedChannelId ? (
-                  <Message who="System" text="Select a channel to load messages." tone="system" />
+                  <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
+                    <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">READY</div>
+                    <div className="mt-2 text-2xl font-black text-px-text">Pick a channel</div>
+                    <div className="mt-2 text-sm text-px-text2">Choose a text channel in the left sidebar to load messages.</div>
+                  </div>
                 ) : navMode === 'home' && !selectedDmThreadId ? (
-                  <Message who="System" text="Select a DM to start chatting." tone="system" />
+                  <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-8 shadow-soft backdrop-blur">
+                    <div className="text-xs font-extrabold tracking-[0.25em] text-px-text2">DIRECT MESSAGES</div>
+                    <div className="mt-2 text-2xl font-black text-px-text">Select a DM</div>
+                    <div className="mt-2 text-sm text-px-text2">Open a conversation from the left to start chatting.</div>
+                  </div>
                 ) : null}
                 {navMode === 'home'
                   ? messagesLoading ? (
@@ -2020,7 +2049,7 @@ function App() {
                       const isDeleted = !!m.deletedAt
                       const showText = isDeleted ? 'Message deleted' : m.content
                       return (
-                        <div key={m.id}>
+                        <div key={m.id} className="rounded-2xl px-2 py-1 hover:bg-white/[0.03] transition-colors">
                           {editingMessageId === m.id && !isDeleted ? (
                             <div className="-mx-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2">
                               <div className="text-xs font-extrabold text-px-text2">Editing message</div>
@@ -2075,7 +2104,7 @@ function App() {
                       const isDeleted = !!m.deletedAt
                       const showText = isDeleted ? 'Message deleted' : m.content
                       return (
-                        <div key={m.id}>
+                        <div key={m.id} className="rounded-2xl px-2 py-1 hover:bg-white/[0.03] transition-colors">
                           {editingMessageId === m.id && !isDeleted ? (
                             <div className="-mx-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2">
                               <div className="text-xs font-extrabold text-px-text2">Editing message</div>
@@ -2120,8 +2149,8 @@ function App() {
             </div>
           </ScrollArea>
 
-          <footer className="border-t border-white/10 p-3">
-            <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          <footer className="border-t border-white/5 p-4">
+            <div className="mx-auto flex max-w-4xl flex-col gap-3">
               {typingLabel ? <div className="px-2 text-xs font-extrabold text-px-text2">{typingLabel}</div> : null}
               {replyingTo ? (
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
@@ -2142,50 +2171,60 @@ function App() {
                 </div>
               ) : null}
 
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-              <Button variant="secondary" size="icon" className="h-9 w-9 rounded-xl bg-white/5 text-px-text2 hover:bg-white/10">
-                +
-              </Button>
-              <Input
-                className="h-10 flex-1 border-0 bg-transparent text-px-text placeholder:text-px-text2 focus-visible:ring-0"
-                onChange={(e) => {
-                  setMessageText(e.target.value)
-                  emitTyping(true)
-                }}
-                onBlur={() => emitTyping(false)}
-                value={messageText}
-                placeholder={
-                  navMode === 'home'
-                    ? selectedDmThreadId
-                      ? 'Message this DM'
-                      : 'Select a DM'
-                    : selectedChannelId
-                      ? 'Message this channel'
-                      : 'Select a channel'
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    onSendMessage()
-                    emitTyping(false)
-                  }
-                }}
-                disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
-              />
-              <Button
-                className="h-9 rounded-xl bg-px-brand px-4 font-extrabold text-white hover:bg-px-brand/90"
-                onClick={onSendMessage}
-                disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
-              >
-                Send
-              </Button>
-            </div>
+              <div className="rounded-3xl border border-white/10 bg-px-panel/60 p-3 shadow-soft backdrop-blur">
+                <div className="flex items-end gap-2">
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-10 w-10 rounded-2xl bg-white/5 text-px-text2 hover:bg-white/10"
+                    disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
+                  >
+                    +
+                  </Button>
+                  <div className="flex-1">
+                    <Input
+                      className="h-12 w-full border-0 bg-transparent px-1 text-[15px] text-px-text placeholder:text-px-text2 focus-visible:ring-0"
+                      onChange={(e) => {
+                        setMessageText(e.target.value)
+                        emitTyping(true)
+                      }}
+                      onBlur={() => emitTyping(false)}
+                      value={messageText}
+                      placeholder={
+                        navMode === 'home'
+                          ? selectedDmThreadId
+                            ? 'Write a message…'
+                            : 'Select a DM'
+                          : selectedChannelId
+                            ? 'Write a message…'
+                            : 'Select a channel'
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          onSendMessage()
+                          emitTyping(false)
+                        }
+                      }}
+                      disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
+                    />
+                    <div className="mt-1 px-1 text-[11px] text-px-text2">Enter to send • Shift not supported yet</div>
+                  </div>
+                  <Button
+                    className="h-10 rounded-2xl bg-px-brand px-5 font-extrabold text-white hover:bg-px-brand/90"
+                    onClick={onSendMessage}
+                    disabled={navMode === 'home' ? !selectedDmThreadId || !socketConnected : !selectedChannelId || !socketConnected}
+                  >
+                    Send
+                  </Button>
+                </div>
+              </div>
             </div>
           </footer>
         </main>
 
         {navMode === 'server' ? (
-          <aside className="bg-px-panel border-l border-white/10 flex h-full flex-col">
+          <aside className="bg-px-panel border-l border-white/5 hidden h-full flex-col lg:flex">
             <div className="p-3">
               <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">MEMBERS</div>
             </div>
@@ -2209,7 +2248,7 @@ function App() {
             </ScrollArea>
           </aside>
         ) : (
-          <aside className="bg-px-panel border-l border-white/10 flex h-full flex-col">
+          <aside className="bg-px-panel border-l border-white/5 hidden h-full flex-col lg:flex">
             <div className="p-3">
               <div className="mb-3 text-xs font-extrabold tracking-wide text-px-text2">HOME</div>
             </div>
@@ -2957,7 +2996,14 @@ function Message({
 
   const isDeleted = !!deletedAt
   return (
-    <div className={showHeader ? 'group relative -mx-2 rounded-lg px-2 py-2 hover:bg-white/5' : 'group relative -mx-2 rounded-lg px-2 py-1 hover:bg-white/5'}>
+    <div
+      className={
+        showHeader
+          ? 'group relative -mx-2 mt-4 rounded-2xl px-2 py-3 hover:bg-white/[0.04]'
+          : 'group relative -mx-2 rounded-2xl px-2 py-1 hover:bg-white/[0.04]'
+      }
+    >
+      {showHeader ? <div className="pointer-events-none absolute inset-x-2 -top-2 h-px bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.10),transparent)]" /> : null}
       <div className="flex gap-3">
         <div className="w-10 shrink-0">
           {showHeader ? (
@@ -2971,9 +3017,9 @@ function Message({
 
         <div className="min-w-0 flex-1">
           {showHeader ? (
-            <div className="flex items-baseline gap-2">
-              <div className={`truncate text-sm font-extrabold ${nameColor}`}>{who}</div>
-              <div className="text-xs text-px-text2">{time}</div>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <div className={`truncate text-[15px] font-black tracking-tight ${nameColor}`}>{who}</div>
+              <div className="text-[11px] font-semibold text-px-text2">{time}</div>
             </div>
           ) : null}
           {replyPreview ? (
@@ -2982,7 +3028,7 @@ function Message({
               <span className="truncate">{replyPreview.text}</span>
             </div>
           ) : null}
-          <div className={showHeader ? 'mt-0.5 text-sm leading-relaxed text-px-text' : 'text-sm leading-relaxed text-px-text'}>{text}</div>
+          <div className={showHeader ? 'mt-1 text-[15px] leading-relaxed text-px-text' : 'text-[15px] leading-relaxed text-px-text'}>{text}</div>
           {!isDeleted && editedAt ? <div className="mt-1 text-[10px] font-extrabold text-px-text2">(edited)</div> : null}
 
           {reactions && reactions.length ? (

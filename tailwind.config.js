@@ -5,17 +5,17 @@ export default {
   theme: {
   	extend: {
   		colors: {
-  			px: {
-  				bg: '#0f1014',
-  				panel: '#1a1d24',
-  				panel2: '#232733',
-  				rail: '#141722',
-  				text: '#f2f3f5',
-  				text2: 'rgba(242, 243, 245, 0.72)',
-  				brand: '#5865f2',
-  				danger: '#ed4245',
-  				success: '#23a559'
-  			},
+			px: {
+				bg: '#0b0c10',
+				panel: '#0f1117',
+				panel2: '#141826',
+				rail: '#0d0f16',
+				text: '#f2f3f5',
+				text2: 'rgba(242, 243, 245, 0.72)',
+				brand: '#ef4444',
+				danger: '#ef4444',
+				success: '#23a559'
+			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
