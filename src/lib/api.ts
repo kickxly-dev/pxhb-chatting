@@ -27,7 +27,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<Api
 }
 
 export type User = { id: string; username: string }
-export type Server = { id: string; name: string }
+export type Server = { id: string; name: string; iconUrl?: string | null }
 export type Channel = { id: string; name: string; type: string }
 export type Member = { id: string; username: string; role: string }
 
@@ -112,6 +112,13 @@ export async function apiCreateServer(name: string) {
       body: JSON.stringify({ name }),
     },
   )
+}
+
+export async function apiUpdateServer(serverId: string, payload: { name?: string; iconUrl?: string | null }) {
+  return apiFetch<{ server: Server }>(`/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function apiListChannels(serverId: string) {

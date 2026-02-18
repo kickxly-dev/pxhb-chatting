@@ -69,6 +69,7 @@ model Server {
   updatedAt   DateTime     @updatedAt
 
   name        String
+  iconUrl     String?
 
   ownerId     String
   owner       User         @relation("ServerOwner", fields: [ownerId], references: [id])

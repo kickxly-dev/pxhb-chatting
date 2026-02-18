@@ -1631,12 +1631,43 @@ app.get('/api/servers', requireAuth, async (req, res) => {
   const memberships = await prisma.membership.findMany({
     where: { userId },
     include: {
-      server: { select: { id: true, name: true } },
+      server: { select: { id: true, name: true, iconUrl: true } },
     },
     orderBy: { createdAt: 'asc' },
   })
 
   res.json({ ok: true, servers: memberships.map((m) => m.server) })
+})
+
+app.patch('/api/servers/:serverId', requireAuth, async (req, res) => {
+  const userId = req.session.userId
+  const { serverId } = req.params
+
+  const membership = await requireMembership(req, res, serverId)
+  if (!membership) return
+  if (membership.role !== 'OWNER') return res.status(403).json({ ok: false, error: 'forbidden' })
+
+  const parsed = z
+    .object({
+      name: z.string().min(2).optional(),
+      iconUrl: z.string().max(500).nullable().optional(),
+    })
+    .safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const data = {}
+  if (typeof parsed.data.name === 'string') data.name = parsed.data.name.trim()
+  if (Object.prototype.hasOwnProperty.call(parsed.data, 'iconUrl')) data.iconUrl = parsed.data.iconUrl || null
+
+  if (!Object.keys(data).length) return res.status(400).json({ ok: false, error: 'invalid_payload' })
+
+  const updated = await prisma.server.update({
+    where: { id: serverId },
+    data,
+    select: { id: true, name: true, iconUrl: true },
+  })
+
+  res.json({ ok: true, server: updated })
 })
 
 app.post('/api/servers', requireAuth, async (req, res) => {

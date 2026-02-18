@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
 import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, SmilePlus, Trash2, Users } from 'lucide-react'
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -67,6 +67,7 @@ import {
   apiRegister,
   apiSendDmMessage,
   apiSendFriendRequest,
+  apiUpdateServer,
   type AdminAuditLog,
   type AdminOverview,
   type AdminSecurity,
@@ -157,6 +158,12 @@ function App() {
   const [newServerName, setNewServerName] = useState('')
   const [createServerBusy, setCreateServerBusy] = useState(false)
   const [createServerError, setCreateServerError] = useState<string | null>(null)
+
+  const [serverSettingsOpen, setServerSettingsOpen] = useState(false)
+  const [serverSettingsBusy, setServerSettingsBusy] = useState(false)
+  const [serverSettingsError, setServerSettingsError] = useState<string | null>(null)
+  const [serverSettingsName, setServerSettingsName] = useState('')
+  const [serverSettingsIconUrl, setServerSettingsIconUrl] = useState('')
 
   const [createChannelOpen, setCreateChannelOpen] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
@@ -1376,6 +1383,39 @@ function App() {
     }
   }
 
+  async function onSaveServerSettings() {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+    if (!selectedServerId) return
+
+    setServerSettingsBusy(true)
+    setServerSettingsError(null)
+    try {
+      const name = serverSettingsName.trim()
+      const iconUrl = serverSettingsIconUrl.trim()
+
+      const payload: { name?: string; iconUrl?: string | null } = {}
+      if (name) payload.name = name
+      if (iconUrl) payload.iconUrl = iconUrl
+      if (!iconUrl) payload.iconUrl = null
+
+      const res = await apiUpdateServer(selectedServerId, payload)
+
+      setServers((prev) => prev.map((s) => (s.id === res.server.id ? { ...s, ...res.server } : s)))
+      pushToast('Server updated', res.server.name, 'success')
+      setServerSettingsOpen(false)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'update_failed'
+      setServerSettingsError(msg)
+      pushToast('Server update failed', msg, 'error')
+    } finally {
+      setServerSettingsBusy(false)
+    }
+  }
+
   if (booting) {
     return (
       <div className="h-full w-full bg-px-bg">
@@ -1473,7 +1513,11 @@ function App() {
                   setSelectedServerId(s.id)
                 }}
               >
-                {s.name.slice(0, 1).toUpperCase()}
+                {s.iconUrl ? (
+                  <img src={s.iconUrl} alt={s.name} className="h-12 w-12 rounded-2xl object-cover" />
+                ) : (
+                  s.name.slice(0, 1).toUpperCase()
+                )}
               </button>
             ))}
 
@@ -1493,9 +1537,21 @@ function App() {
               <Plus className="h-5 w-5" />
             </Button>
             <div className="mt-auto grid w-full place-items-center gap-2 pb-1">
-              <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 grid place-items-center text-sm text-px-text2 hover:bg-white/10 transition-all active:scale-[0.98]">
+              <button
+                type="button"
+                className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 grid place-items-center text-sm text-px-text2 hover:bg-white/10 transition-all active:scale-[0.98]"
+                title={navMode === 'server' ? 'Server settings' : 'Settings'}
+                onClick={() => {
+                  if (navMode !== 'server' || !selectedServerId) return
+                  const s = servers.find((x) => x.id === selectedServerId)
+                  setServerSettingsName(s?.name || '')
+                  setServerSettingsIconUrl(s?.iconUrl || '')
+                  setServerSettingsError(null)
+                  setServerSettingsOpen(true)
+                }}
+              >
                 <Settings className="h-5 w-5" />
-              </div>
+              </button>
               <div className="text-[10px] font-extrabold tracking-wide text-px-text2">Protected by Equinox V1</div>
             </div>
           </div>
@@ -1504,7 +1560,18 @@ function App() {
         <aside className="bg-px-panel border-r border-white/5 flex h-full flex-col animate-in fade-in duration-200">
           <div className="p-3">
             <div className="mb-3 flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10" />
+              <Avatar className="h-9 w-9 rounded-xl">
+                <AvatarImage
+                  src={navMode === 'server' ? servers.find((s) => s.id === selectedServerId)?.iconUrl || '' : ''}
+                  alt=""
+                  className="object-cover"
+                />
+                <AvatarFallback className="rounded-xl bg-white/5 ring-1 ring-white/10 text-xs">
+                  {navMode === 'server'
+                    ? (servers.find((s) => s.id === selectedServerId)?.name || 'S').slice(0, 1).toUpperCase()
+                    : 'PX'}
+                </AvatarFallback>
+              </Avatar>
               <div className="min-w-0">
                 <div className="truncate font-extrabold">PXHB Chatting</div>
                 <div className="truncate text-xs text-px-text2">
@@ -2812,6 +2879,58 @@ function App() {
               disabled={createServerBusy}
             >
               {createServerBusy ? 'Creating…' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={serverSettingsOpen}
+        onOpenChange={(o) => {
+          setServerSettingsOpen(o)
+          if (!o) {
+            setServerSettingsBusy(false)
+            setServerSettingsError(null)
+          }
+        }}
+      >
+        <DialogContent className="border-white/10 bg-px-panel text-px-text">
+          <DialogHeader>
+            <DialogTitle>Server Settings</DialogTitle>
+            <DialogDescription className="text-px-text2">Rename your server and set an icon URL.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <Input
+              value={serverSettingsName}
+              onChange={(e) => setServerSettingsName(e.target.value)}
+              placeholder="Server name"
+              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+            />
+            <Input
+              value={serverSettingsIconUrl}
+              onChange={(e) => setServerSettingsIconUrl(e.target.value)}
+              placeholder="Icon URL (https://…)"
+              className="border-white/10 bg-white/5 text-px-text placeholder:text-px-text2"
+            />
+            {serverSettingsError ? <div className="text-sm font-semibold text-red-400">{serverSettingsError}</div> : null}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="secondary"
+              className="h-9 bg-white/5 text-px-text2 hover:bg-white/10"
+              onClick={() => setServerSettingsOpen(false)}
+              disabled={serverSettingsBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="h-9 bg-px-brand text-white hover:bg-px-brand/90"
+              onClick={onSaveServerSettings}
+              disabled={serverSettingsBusy}
+            >
+              {serverSettingsBusy ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>
