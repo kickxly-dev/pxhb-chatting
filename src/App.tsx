@@ -1899,7 +1899,27 @@ function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className="px-3 py-2 text-sm text-px-text2">No channels</div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs font-extrabold tracking-wide text-px-text2">TEXT CHANNELS</div>
+                    <div className="mt-2 text-sm font-semibold text-px-text">No channels yet</div>
+                    <div className="mt-1 text-sm text-px-text2">Create a channel to start chatting.</div>
+                    <div className="mt-3">
+                      <Button
+                        variant="secondary"
+                        className="h-9 w-full bg-white/5 text-px-text2 hover:bg-white/10"
+                        onClick={() => {
+                          if (!user) {
+                            setAuthMode('login')
+                            setAuthOpen(true)
+                            return
+                          }
+                          setCreateChannelOpen(true)
+                        }}
+                      >
+                        New channel
+                      </Button>
+                    </div>
+                  </div>
                 )
               )}
             </nav>
@@ -2271,56 +2291,63 @@ function App() {
                           <div key={i} className="h-12 w-full animate-pulse rounded-xl bg-white/5" />
                         ))}
                       </div>
-                    ) : messages.map((m, idx) => {
-                      const prev = messages[idx - 1]
-                      const sameAuthor = prev && prev.author.id === m.author.id
-                      const showHeader = !sameAuthor
-                      const isMine = m.author.id === user?.id
-                      const isDeleted = !!m.deletedAt
-                      const showText = isDeleted ? 'Message deleted' : m.content
-                      return (
-                        <div key={m.id} className="rounded-2xl px-2 py-1 hover:bg-white/[0.03] transition-colors">
-                          {editingMessageId === m.id && !isDeleted ? (
-                            <div className="-mx-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2">
-                              <div className="text-xs font-extrabold text-px-text2">Editing message</div>
-                              <div className="mt-2 flex gap-2">
-                                <Input value={editingMessageText} onChange={(e) => setEditingMessageText(e.target.value)} className="flex-1" />
-                                <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={() => onSaveEdit(m.id)}>
-                                  Save
-                                </Button>
-                                <Button variant="secondary" className="bg-white/5 text-px-text2 hover:bg-white/10" onClick={onCancelEdit}>
-                                  Cancel
-                                </Button>
+                    ) : messages.length ? (
+                      messages.map((m, idx) => {
+                        const prev = messages[idx - 1]
+                        const sameAuthor = prev && prev.author.id === m.author.id
+                        const showHeader = !sameAuthor
+                        const isMine = m.author.id === user?.id
+                        const isDeleted = !!m.deletedAt
+                        const showText = isDeleted ? 'Message deleted' : m.content
+                        return (
+                          <div key={m.id} className="rounded-2xl px-2 py-1 hover:bg-white/[0.03] transition-colors">
+                            {editingMessageId === m.id && !isDeleted ? (
+                              <div className="-mx-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2">
+                                <div className="text-xs font-extrabold text-px-text2">Editing message</div>
+                                <div className="mt-2 flex gap-2">
+                                  <Input value={editingMessageText} onChange={(e) => setEditingMessageText(e.target.value)} className="flex-1" />
+                                  <Button className="bg-px-brand text-white hover:bg-px-brand/90" onClick={() => onSaveEdit(m.id)}>
+                                    Save
+                                  </Button>
+                                  <Button variant="secondary" className="bg-white/5 text-px-text2 hover:bg-white/10" onClick={onCancelEdit}>
+                                    Cancel
+                                  </Button>
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <Message
-                              who={displayNameFor(m.author)}
-                              avatarUrl={m.author.avatarUrl || null}
-                              text={showText}
-                              tone={isDeleted ? 'system' : m.author.id === user?.id ? 'me' : 'bot'}
-                              createdAt={m.createdAt}
-                              showHeader={showHeader}
-                              replyPreview={m.replyTo ? { who: displayNameFor(m.replyTo.author), text: m.replyTo.content } : null}
-                              reactions={m.reactions}
-                              editedAt={m.editedAt}
-                              deletedAt={m.deletedAt}
-                              canPin={!isDeleted}
-                              isPinned={!!m.pinnedAt}
-                              onTogglePin={() => onTogglePin(m.id, !!m.pinnedAt)}
-                              canEdit={isMine && !isDeleted}
-                              canDelete={isMine && !isDeleted}
-                              onEdit={() => onBeginEdit(m.id, m.content)}
-                              onDelete={() => onDelete(m.id)}
-                              onReact={(emoji) => onToggleReaction(m.id, emoji)}
-                              onReply={() => {
-                                setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
-                              }}
-                            />
-                          )}
-                        </div>
-                      )
-                    })}
+                            ) : (
+                              <Message
+                                who={displayNameFor(m.author)}
+                                avatarUrl={m.author.avatarUrl || null}
+                                text={showText}
+                                tone={isDeleted ? 'system' : m.author.id === user?.id ? 'me' : 'bot'}
+                                createdAt={m.createdAt}
+                                showHeader={showHeader}
+                                replyPreview={m.replyTo ? { who: displayNameFor(m.replyTo.author), text: m.replyTo.content } : null}
+                                reactions={m.reactions}
+                                editedAt={m.editedAt}
+                                deletedAt={m.deletedAt}
+                                canPin={!isDeleted}
+                                isPinned={!!m.pinnedAt}
+                                onTogglePin={() => onTogglePin(m.id, !!m.pinnedAt)}
+                                canEdit={isMine && !isDeleted}
+                                canDelete={isMine && !isDeleted}
+                                onEdit={() => onBeginEdit(m.id, m.content)}
+                                onDelete={() => onDelete(m.id)}
+                                onReact={(emoji) => onToggleReaction(m.id, emoji)}
+                                onReply={() => {
+                                  setReplyingTo({ id: m.id, who: m.author.username, preview: m.content.slice(0, 80) })
+                                }}
+                              />
+                            )}
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <div className="text-sm font-semibold text-px-text">No messages in this channel</div>
+                        <div className="mt-1 text-sm text-px-text2">Be the first to say something!</div>
+                      </div>
+                    )}
               </div>
             </div>
           </ScrollArea>
@@ -2416,7 +2443,10 @@ function App() {
                     return <Member key={m.id} name={displayNameFor(m)} username={m.username} avatarUrl={m.avatarUrl || null} status={p.status} lastSeenAt={p.lastSeenAt} />
                   })
                 ) : (
-                  <Member name="No members" status="offline" />
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-sm font-semibold text-px-text">No members</div>
+                    <div className="mt-1 text-sm text-px-text2">Invite people to this server.</div>
+                  </div>
                 )}
               </div>
             </ScrollArea>
@@ -2884,7 +2914,10 @@ function App() {
                   </div>
                 ))
               ) : (
-                <div className="text-sm text-px-text2">No messages yet</div>
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <div className="text-sm font-semibold text-px-text">No messages yet</div>
+                  <div className="mt-1 text-sm text-px-text2">Start the conversation!</div>
+                </div>
               )}
             </div>
           </div>
