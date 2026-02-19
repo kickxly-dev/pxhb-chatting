@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Building, Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
+import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -122,9 +122,7 @@ function App() {
 
   const socketRef = useRef<Socket | null>(null)
   const [socketConnected, setSocketConnected] = useState(false)
-  const [socketError, setSocketError] = useState<string | null>(null)
   const [apiHealth, setApiHealth] = useState<'unknown' | 'ok' | 'fail'>('unknown')
-  const [socketTarget, setSocketTarget] = useState<string>('')
 
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
@@ -1137,7 +1135,6 @@ function App() {
       socketRef.current?.disconnect()
       socketRef.current = null
       setSocketConnected(false)
-      setSocketError(null)
       return
     }
 
@@ -1145,8 +1142,6 @@ function App() {
 
     const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost' && window.location.port === '5173'
     const socketUrl = isDev ? 'http://localhost:3000' : undefined
-
-    setSocketTarget(socketUrl || window.location.origin)
 
     const s = ioClient(socketUrl, {
       withCredentials: true,
@@ -1157,7 +1152,6 @@ function App() {
 
     s.on('connect', () => {
       setSocketConnected(true)
-      setSocketError(null)
 
       if (selectedChannelId) {
         s.emit('channel:join', { channelId: selectedChannelId })
@@ -1193,7 +1187,7 @@ function App() {
     })
     s.on('disconnect', () => setSocketConnected(false))
     s.on('connect_error', (err) => {
-      setSocketError(err?.message || 'connect_error')
+      console.error('Socket connect error:', err)
     })
 
     s.on('presence:changed', (payload: { userId: string; status: PresenceStatus; lastSeenAt: string | null }) => {
@@ -1324,11 +1318,9 @@ function App() {
     s.on('chat:error', (payload: unknown) => {
       if (payload && typeof payload === 'object' && 'message' in payload) {
         const msg = (payload as { message?: unknown }).message
-        setSocketError(typeof msg === 'string' && msg ? msg : 'chat_error')
         if (typeof msg === 'string' && msg) pushToast('Error', msg, 'error')
         return
       }
-      setSocketError('chat_error')
       pushToast('Error', 'chat_error', 'error')
     })
 
@@ -1481,7 +1473,7 @@ function App() {
     }
 
     if (!socketConnected || !socketRef.current) {
-      setSocketError('socket_not_connected')
+      pushToast('Error', 'Socket not connected', 'error')
       return
     }
 
@@ -1512,7 +1504,7 @@ function App() {
       return
     }
     if (!socketConnected || !socketRef.current) {
-      setSocketError('socket_not_connected')
+      pushToast('Error', 'Socket not connected', 'error')
       return
     }
     if (navMode === 'server') {
@@ -2212,12 +2204,12 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-gradient-to-b from-px-panel2/95 to-px-panel2/80 px-3 lg:px-6 backdrop-blur-xl supports-[backdrop-filter]:bg-px-panel2/70 shadow-lg">
+          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/5 bg-px-panel2/95 px-4 lg:px-6 backdrop-blur-sm">
             <div className="flex items-center gap-3 lg:gap-4 flex-1 min-w-0">
               <div className="flex items-center gap-2 lg:gap-3">
-                <div className="relative h-9 lg:h-10 w-9 lg:w-10 rounded-xl bg-gradient-to-br from-white/12 to-white/4 grid place-items-center shadow-sm border border-white/8 transition-all hover:scale-105">
+                <div className="relative h-9 lg:h-10 w-9 lg:w-10 rounded-xl bg-white/8 grid place-items-center">
                   {navMode === 'home' ? <MessageCircle className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" /> : <Hash className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" />}
-                  <div className="absolute -bottom-0.5 -right-0.5 h-2.5 lg:h-3 w-2.5 lg:w-3 rounded-full bg-px-success shadow-lg shadow-px-success/50 animate-pulse" />
+                  <div className="absolute -bottom-0.5 -right-0.5 h-2.5 lg:h-3 w-2.5 lg:w-3 rounded-full bg-px-success" />
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-sm lg:text-base font-semibold tracking-tight text-px-text">
@@ -2234,85 +2226,49 @@ function App() {
                   </div>
                 </div>
               </div>
-              <div className="hidden lg:flex items-center gap-2 rounded-xl border border-white/8 bg-white/4 px-3 py-1.5 shadow-sm">
-                <div className="flex items-center gap-1.5">
-                  <div className={`h-1.5 w-1.5 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-red-400 shadow-red-400/50'} animate-pulse`} />
-                  <span className="text-[10px] font-medium text-px-text2">API</span>
-                </div>
-                <span className="text-white/15 text-xs">|</span>
-                <div className="flex items-center gap-1.5">
-                  <div className={`h-1.5 w-1.5 rounded-full ${socketConnected ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-amber-400 shadow-amber-400/50'} ${socketConnected ? '' : 'animate-pulse'}`} />
-                  <span className="text-[10px] font-medium text-px-text2">Socket</span>
-                </div>
-                {socketError ? <span className="text-xs font-medium text-red-300 ml-1">({socketError})</span> : null}
-                {socketTarget ? <span className="text-[9px] font-medium text-px-text2/60 ml-1">@ {socketTarget}</span> : null}
+              <div className="hidden lg:flex items-center gap-2 rounded-lg bg-white/3 px-3 py-1.5">
+                <div className={`h-1.5 w-1.5 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse`} />
+                <span className="text-[10px] font-medium text-px-text2">Online</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center rounded-lg border border-white/8 bg-white/4 px-2.5 py-1 text-[9px] font-semibold text-px-text2/80">
-                <span className="hidden lg:inline">Equinox V1</span>
-                <span className="lg:hidden">E1</span>
-              </div>
               <div className="flex items-center gap-1.5">
                 <Button
-                  variant="secondary"
-                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 rounded-lg text-px-text2 hover:bg-white/8"
                   onClick={() => {
                     setPinsOpen(true)
                     if (user) refreshPins()
                   }}
                   disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
+                  title="Pinned messages"
                 >
-                  <Pin className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-                  <span className="hidden lg:inline ml-1.5">Pins</span>
+                  <Pin className="h-4 w-4" />
                 </Button>
                 <Button
-                  variant="secondary"
-                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 rounded-lg text-px-text2 hover:bg-white/8"
                   onClick={() => {
                     setSearchOpen(true)
                     setSearchError(null)
                     setSearchResults([])
                   }}
                   disabled={!user || (navMode === 'server' ? !selectedChannelId : !selectedDmThreadId)}
+                  title="Search messages"
                 >
-                  <Hash className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-                  <span className="hidden lg:inline ml-1.5">Search</span>
+                  <Hash className="h-4 w-4" />
                 </Button>
                 <Button
-                  variant="secondary"
-                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
-                  onClick={() => {
-                    setAdminOpen(true)
-                    setAdminError(null)
-                    if (user && adminAuthed) {
-                      refreshAdminData()
-                    }
-                  }}
-                  disabled={!user}
-                >
-                  <Settings className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-                  <span className="hidden lg:inline ml-1.5">Admin</span>
-                </Button>
-                {navMode === 'server' && selectedServerId && (
-                  <Button
-                    variant="secondary"
-                    className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
-                    onClick={() => setServerManageOpen(true)}
-                    disabled={!user}
-                  >
-                    <Building className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-                    <span className="hidden lg:inline ml-1.5">Server</span>
-                  </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  className="h-8 lg:h-9 rounded-lg bg-white/4 border border-white/8 text-px-text2 transition-all hover:bg-white/8 hover:border-white/12 active:scale-[0.97] text-xs lg:text-sm px-2.5 lg:px-3.5 shadow-sm"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 rounded-lg text-px-text2 hover:bg-white/8"
                   onClick={() => setNotificationsOpen(true)}
                   disabled={!user}
+                  title="Notifications"
                 >
-                  <MessageCircle className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-                  <span className="hidden lg:inline ml-1.5">Alerts</span>
+                  <MessageCircle className="h-4 w-4" />
                 </Button>
               </div>
               <Button
