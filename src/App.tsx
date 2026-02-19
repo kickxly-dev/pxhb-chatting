@@ -2204,31 +2204,31 @@ function App() {
         </aside>
 
         <main className="bg-px-panel2 flex h-full flex-col animate-in fade-in duration-200">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/5 bg-px-panel2/95 px-4 lg:px-6 backdrop-blur-sm">
+          <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-slate-700 bg-slate-900 px-6 shadow-lg">
             <div className="flex items-center gap-3 lg:gap-4 flex-1 min-w-0">
               <div className="flex items-center gap-2 lg:gap-3">
-                <div className="relative h-9 lg:h-10 w-9 lg:w-10 rounded-xl bg-white/8 grid place-items-center">
-                  {navMode === 'home' ? <MessageCircle className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" /> : <Hash className="h-4 lg:h-5 w-4 lg:w-5 text-px-text" />}
-                  <div className="absolute -bottom-0.5 -right-0.5 h-2.5 lg:h-3 w-2.5 lg:w-3 rounded-full bg-px-success" />
+                <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 grid place-items-center shadow-lg border border-white/10">
+                  {navMode === 'home' ? <MessageCircle className="h-5 w-5 text-white drop-shadow-lg" /> : <Hash className="h-5 w-5 text-white drop-shadow-lg" />}
+                  <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-400 shadow-lg shadow-green-400/50 animate-pulse border-2 border-white" />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-sm lg:text-base font-semibold tracking-tight text-px-text">
+                  <div className="truncate text-base font-bold text-white">
                     {navMode === 'home'
-                      ? dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'Home'
+                      ? dmThreads.find((t) => t.id === selectedDmThreadId)?.otherUser.username || 'Direct Messages'
                       : servers.find((s) => s.id === selectedServerId)?.name || 'Server'}
                   </div>
-                  <div className="truncate text-xs lg:text-xs font-medium text-px-text2/70 hidden sm:block">
+                  <div className="truncate text-sm font-medium text-slate-400 hidden sm:block">
                     {navMode === 'home'
                       ? selectedDmThreadId
-                        ? 'Direct Messages'
-                        : 'Friends • DMs'
-                      : `# ${channels.find((c) => c.id === selectedChannelId)?.name || 'general'}`}
+                        ? 'Active conversation'
+                        : 'Choose a conversation'
+                      : `#${channels.find((c) => c.id === selectedChannelId)?.name || 'general'}`}
                   </div>
                 </div>
               </div>
-              <div className="hidden lg:flex items-center gap-2 rounded-lg bg-white/3 px-3 py-1.5">
-                <div className={`h-1.5 w-1.5 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse`} />
-                <span className="text-[10px] font-medium text-px-text2">Online</span>
+              <div className="hidden lg:flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1.5 border border-slate-700">
+                <div className={`h-2.5 w-2.5 rounded-full ${apiHealth === 'ok' ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse shadow-lg`} />
+                <span className="text-sm font-semibold text-slate-300">Live</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
