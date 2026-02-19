@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
+import { Building, Copy, Hash, MessageCircle, MoreHorizontal, Pencil, Pin, Plus, Reply, Settings, Shield, SmilePlus, Trash2, Users } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -2270,6 +2270,34 @@ function App() {
                 >
                   <MessageCircle className="h-4 w-4" />
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 rounded-lg text-px-text2 hover:bg-white/8"
+                  onClick={() => {
+                    setAdminOpen(true)
+                    setAdminError(null)
+                    if (user && adminAuthed) {
+                      refreshAdminData()
+                    }
+                  }}
+                  disabled={!user}
+                  title="Admin"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+                {navMode === 'server' && selectedServerId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 rounded-lg text-px-text2 hover:bg-white/8"
+                    onClick={() => setServerManageOpen(true)}
+                    disabled={!user}
+                    title="Server settings"
+                  >
+                    <Building className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
               <Button
                 variant="secondary"
